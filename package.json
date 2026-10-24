@@ -1,0 +1,17 @@
+{
+  "name": "adzonex-billing",
+  "version": "1.0.0",
+  "description": "Ad ZoneX Billing",
+  "main": "electron/main.js",
+  "author": { "name": "Ad ZoneX", "email": "enqury@adzonex.in" },
+  "scripts": { "start": "electron ." },
+  "build": {
+    "appId": "in.adzonex.billing",
+    "productName": "Ad ZoneX Billing",
+    "files": ["electron/**", "index.html", "app.js", "logo.js", "style.css", "manifest.webmanifest", "icon-*.png", "images/**", "libs/**"],
+    "win": { "target": "nsis", "icon": "icon-512.png" },
+    "mac": { "target": "dmg", "icon": "icon-512.png", "category": "public.app-category.business" },
+    "linux": { "target": ["AppImage", "deb"], "icon": "icon-512.png", "category": "Office" }
+  },
+  "devDependencies": { "electron": "^33.0.0", "electron-builder": "^25.0.0" }
+}
