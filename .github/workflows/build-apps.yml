@@ -36,7 +36,7 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx electron-builder --publish never
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-${{ matrix.os }}
           path: |
@@ -108,7 +108,7 @@ jobs:
             cp mobile/android/app/build/outputs/apk/debug/app-debug.apk out/AdZoneX-Billing-android-test.apk
           fi
           ls -la out
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-apk
           path: out/*.apk
@@ -137,7 +137,7 @@ jobs:
           npx capacitor-assets generate --ios --assetPath resources --iconBackgroundColor '#1f2024' --splashBackgroundColor '#000000' --splashBackgroundColorDark '#000000'
           npx cap sync ios
           zip -r -q ../AdZoneX-Billing-ios-xcode-project.zip ios
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-xcode-project
           path: AdZoneX-Billing-ios-xcode-project.zip
