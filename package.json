@@ -1,0 +1,85 @@
+{
+  "name": "adzonex-billing",
+  "version": "1.0.0",
+  "description": "Ad ZoneX Billing - estimates and GST invoices",
+  "homepage": "https://adzonex.in",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "electron/main.js",
+  "author": {
+    "name": "Ad ZoneX",
+    "email": "enqury@adzonex.in"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never"
+  },
+  "build": {
+    "appId": "in.adzonex.billing",
+    "productName": "Ad ZoneX Billing",
+    "copyright": "Copyright (c) Ad ZoneX",
+    "directories": {
+      "output": "dist"
+    },
+    "artifactName": "AdZoneX-Billing-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "electron/**",
+      "index.html",
+      "app.js",
+      "logo.js",
+      "style.css",
+      "manifest.webmanifest",
+      "icon-*.png",
+      "images/**",
+      "libs/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon-512.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Ad ZoneX Billing"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "icon-512.png",
+      "category": "public.app-category.business"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "icon-512.png",
+      "category": "Office",
+      "maintainer": "Ad ZoneX <enqury@adzonex.in>",
+      "synopsis": "Estimates and GST invoices",
+      "syncDesktopName": true
+    }
+  },
+  "devDependencies": {
+    "electron": "43.8.3",
+    "electron-builder": "26.18.0"
+  },
+  "desktopName": "adzonex-billing.desktop"
+}
