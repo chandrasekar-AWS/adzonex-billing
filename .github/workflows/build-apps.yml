@@ -1,0 +1,163 @@
+name: Build apps
+
+# Builds the installers for Windows, Mac, Linux and Android (and an iPhone/iPad Xcode project).
+# Run it by hand:  Actions > Build apps > Run workflow.
+# Or publish a release:  git tag v1.0.1 && git push origin v1.0.1   (installers appear on the Releases page)
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+env:
+  CAPACITOR_VERSION: "7.6.9"
+
+jobs:
+  desktop:
+    name: Desktop (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Use the release number from the tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+      - run: npm ci
+      - name: Build installer
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --publish never
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.AppImage
+            dist/*.deb
+          if-no-files-found: error
+
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Prepare the Android project
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then VN="${GITHUB_REF_NAME#v}"; else VN="1.0.${GITHUB_RUN_NUMBER}"; fi
+          echo "VERSION_NAME=$VN" >> "$GITHUB_ENV"
+          mkdir -p mobile/www
+          cp -r index.html app.js logo.js style.css manifest.webmanifest sw.js icon-*.png images libs mobile/www/
+          cp native/capacitor.config.json mobile/
+          cp -r native/resources mobile/resources
+          cd mobile
+          npm init -y > /dev/null
+          npm i --no-audit --no-fund "@capacitor/core@${CAPACITOR_VERSION}" "@capacitor/cli@${CAPACITOR_VERSION}" "@capacitor/android@${CAPACITOR_VERSION}" @capacitor/filesystem@7.1.9 @capacitor/share@7.0.4
+          npm i -D --no-audit --no-fund @capacitor/assets@3.0.5
+          npx cap add android
+          npx capacitor-assets generate --android --assetPath resources --iconBackgroundColor '#1f2024' --iconBackgroundColorDark '#1f2024' --splashBackgroundColor '#000000' --splashBackgroundColorDark '#000000'
+          VERSION_CODE="$VERSION_CODE" VERSION_NAME="$VN" python3 ../native/patch-android.py android
+          npx cap sync android
+      - name: Load the signing key (if you added it)
+        id: sign
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No Android signing key found, so this APK is signed with a temporary test key. Add the 4 secrets from android-signing/SECRETS-TO-ADD.txt to get an APK that can be updated in place."
+          fi
+      - name: Build the APK
+        working-directory: mobile/android
+        env:
+          SIGNED: ${{ steps.sign.outputs.signed }}
+          KS_FILE: ${{ steps.sign.outputs.signed == 'true' && format('{0}/release.keystore', runner.temp) || '' }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          if [ "$SIGNED" = "true" ]; then ./gradlew assembleRelease --no-daemon --stacktrace; else ./gradlew assembleDebug --no-daemon --stacktrace; fi
+      - name: Collect the APK
+        run: |
+          mkdir -p out
+          if [ -f mobile/android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp mobile/android/app/build/outputs/apk/release/app-release.apk out/AdZoneX-Billing-android.apk
+          else
+            cp mobile/android/app/build/outputs/apk/debug/app-debug.apk out/AdZoneX-Billing-android-test.apk
+          fi
+          ls -la out
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-apk
+          path: out/*.apk
+          if-no-files-found: error
+
+  ios:
+    name: iPhone and iPad Xcode project
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Prepare the iOS project
+        run: |
+          mkdir -p mobile/www
+          cp -r index.html app.js logo.js style.css manifest.webmanifest sw.js icon-*.png images libs mobile/www/
+          cp native/capacitor.config.json mobile/
+          cp -r native/resources mobile/resources
+          cd mobile
+          npm init -y > /dev/null
+          npm i --no-audit --no-fund "@capacitor/core@${CAPACITOR_VERSION}" "@capacitor/cli@${CAPACITOR_VERSION}" "@capacitor/ios@${CAPACITOR_VERSION}" @capacitor/filesystem@7.1.9 @capacitor/share@7.0.4
+          npm i -D --no-audit --no-fund @capacitor/assets@3.0.5
+          npx cap add ios
+          npx capacitor-assets generate --ios --assetPath resources --iconBackgroundColor '#1f2024' --splashBackgroundColor '#000000' --splashBackgroundColorDark '#000000'
+          npx cap sync ios
+          zip -r -q ../AdZoneX-Billing-ios-xcode-project.zip ios
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-xcode-project
+          path: AdZoneX-Billing-ios-xcode-project.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && !cancelled() && needs.desktop.result == 'success' && needs.android.result == 'success' }}
+    needs: [desktop, android, ios]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: release
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la release
+          gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --title "Ad ZoneX Billing $GITHUB_REF_NAME" --generate-notes

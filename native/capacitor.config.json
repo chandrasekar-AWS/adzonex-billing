@@ -1,0 +1,19 @@
+{
+  "appId": "in.adzonex.billing",
+  "appName": "Ad ZoneX Billing",
+  "webDir": "www",
+  "backgroundColor": "#000000",
+  "loggingBehavior": "none",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#000000",
+    "allowMixedContent": false,
+    "adjustMarginsForEdgeToEdge": "force",
+    "webContentsDebuggingEnabled": false
+  },
+  "ios": {
+    "backgroundColor": "#000000"
+  }
+}
