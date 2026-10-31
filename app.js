@@ -73,7 +73,7 @@ const pend=new Set();let tm;
 function touch(d){if(!S.docs.includes(d))return;d.u=Date.now();save();pend.add(d.id);clearTimeout(tm);tm=setTimeout(push,800)}
 function commit(d){if(!S.docs.includes(d)){d.estNo=d.estNo||mkNo(d.date);lg(d,'Estimate '+d.estNo+' saved');S.docs.unshift(d)}touch(d)}
 const SH=['name','addr','gst','phone','email','bank','acc','ifsc','holder','payto','terms','copy','auto','services','svv','logo','ne','nb','bw','colors','cal','exp'];
-const sch=()=>{S.set.su=Date.now();S.pset=1;save();clearTimeout(tm);tm=setTimeout(push,800)};
+const sch=()=>{S.set.su=Date.now();S.pset=1;save();clearTimeout(tm);tm=setTimeout(push,800);schedNote()};
 async function push(){if(!cloud())return;const ids=[...pend];try{st('Saving…');pend.clear();if(ids.length)await api('push',{docs:S.docs.filter(d=>ids.includes(d.id))});if(S.pset){await api('pushset',{set:{u:S.set.su,v:Object.fromEntries(SH.map(k=>[k,S.set[k]]))}});S.pset=0;save()}LEGACY?st('Synced (not shared)','ok','Your Supabase database is still the older private version, so bills are NOT shared between logins.\n\nTo share them: Supabase > SQL Editor > paste everything from backend/supabase.sql > Run. Your bills are kept.'):st('Synced','ok')}catch(x){console.warn('push',x);ids.forEach(i=>pend.add(i));syncFail(x,true);clearTimeout(tm);tm=setTimeout(push,15000)}}
 let PULLING=null,LASTPULL=0;function pull(){if(PULLING)return PULLING;return PULLING=pull0().finally(()=>{PULLING=null;LASTPULL=Date.now()})}
 async function pull0(){if(!cloud())return;try{st('Syncing…');if(SCHEMA===null){const t=await sb.rpc('is_team_member');if(t.error){if(authErr(mk(t))){const e=mk(t);throw e}if(t.error.code==='PGRST202'||t.error.code==='42883'||/Could not find the function/i.test(t.error.message||'')){SCHEMA='old';LEGACY=true}}else{SCHEMA='new';MEMBER=t.data===true}}
@@ -85,7 +85,7 @@ let np=0;const rc=j.set&&j.set.v&&typeof j.set.v=='object'?okSet(j.set.v):null;
 if(rc)['cal','exp'].forEach(k=>{const rr=k in rc?rc[k]:[],m=mergeL(S.set[k],rr);if(m.length!=rr.length||m.some(x=>{const r=rr.find(y=>y.id==x.id);return!r||r.u<x.u}))np=1;S.set[k]=m});
 if(rc&&+j.set.u>(S.set.su||0)){SH.forEach(k=>{if(k in rc&&k!='cal'&&k!='exp')S.set[k]=rc[k]});if(!Array.isArray(S.set.services)||!S.set.services.length)S.set.services=SV.map(x=>({...x}));S.set.su=+j.set.u}else if(!j.set)S.pset=1;
 if(np){S.set.su=Date.now();S.pset=1}
-S.docs.sort((a,b)=>b.u-a.u);save();await push()}catch(x){console.warn('sync',x);syncFail(x,false)}}
+S.docs.sort((a,b)=>b.u-a.u);save();schedNote();await push()}catch(x){console.warn('sync',x);syncFail(x,false)}}
 async function mail(d,auto){if(!mailOk()){if(!auto)alert('Email is not set up. Sign in, then add the email script URL in Settings > Email.');return}const ta=[d.email,S.set.copy].map(x=>String(x||'').trim()).filter(Boolean),bad=ta.filter(x=>!EMRE.test(x));if(!ta.length){if(!auto)alert('Add the customer email, or your own email in Settings.');return}if(bad.length){if(!auto)alert('This email address does not look right: '+bad[0]);else st('Email not sent: check the address','bad');return}const to=ta.join(',');
 try{st('Sending email…');let pdfB='';try{pdfB=(await pdfMake(d)).output('datauristring').split(',')[1]}catch(x){console.warn('pdf for mail',x)}await mailApi({to,subject:(isBill(d)?'Invoice ':'Estimate ')+no(d)+' - '+S.set.name,file:no(d).replace(/[\/\\]/g,'-'),html:paper(d),pdf:pdfB});lg(d,'Emailed to '+to);touch(d);st('Email sent','ok');if(!auto)alert('Email sent to '+to)}catch(x){st('Email failed','bad');alert('Email failed: '+x.message)}}
 const NQ=/^\d{6}-\d{2}(\d+)$/,OQ=/^\d{4}-\d{2}-\d{2}-(\d+)$/,seqOf=c=>{const m=NQ.exec(c||'')||OQ.exec(c||'');return m?+m[1]:0},nextSeq=()=>Math.max(+S.set.ne||101,S.docs.reduce((a,d)=>Math.max(a,seqOf(d.estNo)),0)+1),mkNo=dt=>{const p=(dt||today()).split('-');return p[0]+p[1]+'-'+p[2]+nextSeq()};
@@ -399,9 +399,38 @@ function RB(){if(remHide)return'';const L=cdue();if(!L.length)return'';const t=t
 return `<div class="rb"><div class="rbh"><b>${nt?'Collect money today ('+nt+')':'Missed collections ('+od+')'}${nt&&od?' + '+od+' missed':''}</b><button class="ghost sm" data-rh="1">Hide</button></div>${L.slice(0,8).map(x=>{const w=waNum(x.ph);return `<div class="rbr"><div><b>${e(x.n)}</b> · ₹ ${n2(x.a)} <small>${CTL[x.t]}${x.d<t?' · missed '+dm(x.d):''}${x.ph?' · '+e(x.ph):''}</small></div><div class="act">${x.ph?`<a class="btn sm" href="tel:${e(telH(x.ph))}">Call</a>`:''}${w?`<a class="btn ghost sm" target="_blank" rel="noopener noreferrer" href="https://wa.me/${w}">WhatsApp</a>`:''}<button class="ghost sm" data-bok="${e(x.id)}">Received</button></div></div>`}).join('')}${L.length>8?`<small>and ${L.length-8} more in Calendar</small>`:''}</div>`}
 document.addEventListener('click',async ev=>{const b=ev.target.closest&&ev.target.closest('[data-bok]');if(b){b.disabled=true;const rec=await calDone(b.dataset.bok),r=document.querySelector('.rb');if(r)r.outerHTML=RB();if(rec&&['#/h','#/s',''].includes(location.hash))route();return}
 const h=ev.target.closest&&ev.target.closest('[data-rh]');if(h){remHide=true;const r=h.closest('.rb');if(r)r.remove()}});
-function fireNote(t,o){if(!window.Notification||Notification.permission!='granted')return;if(!isNat()&&navigator.serviceWorker&&navigator.serviceWorker.ready)navigator.serviceWorker.ready.then(r=>r.showNotification(t,o)).catch(()=>{try{new Notification(t,o)}catch{}});else{try{new Notification(t,o)}catch{}}}
-function remCheck(){const L=cdue().filter(x=>x.d===today());if(!L.length||!window.Notification||Notification.permission!='granted'||S.set.rn===today())return;const n=new Date(),hm=String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');if(hm<(S.set.rt||'09:00'))return;S.set.rn=today();save();
-fireNote('Collect money today ('+L.length+')',{body:L.map(x=>x.n+' - ₹'+n2(x.a)+(x.ph?' ('+x.ph+')':'')).join('\n'),icon:'icon-192.png',tag:'zx-pay-'+today()})}
+/* ===== Notifications that also work when the app is closed =====
+   Android / iPhone app : reminders are scheduled with the phone's own alarm system (Capacitor Local Notifications), so they appear with the app closed.
+   Windows / Mac / Linux: the app keeps running in the tray when its window is closed and shows a normal system notification.
+   Browser / web app    : shown while the app is open; installed Chrome/Edge apps also get a background check (Periodic Background Sync). */
+const LN=()=>{try{const C=window.Capacitor;if(!isNat())return null;return(C.Plugins&&C.Plugins.LocalNotifications)||(C.registerPlugin&&C.registerPlugin('LocalNotifications'))||null}catch{return null}},isDesk=()=>/Electron\//.test(navigator.userAgent);
+async function notePerm(){const L=LN();if(L){try{const r=await L.checkPermissions();return r.display=='granted'?'granted':r.display=='denied'?'denied':'prompt'}catch{return'none'}}
+if(!window.Notification)return'none';return Notification.permission=='default'?'prompt':Notification.permission}
+async function noteAsk(){const L=LN();if(L){try{await L.requestPermissions()}catch{}}else if(window.Notification){try{await Notification.requestPermission()}catch{}}return notePerm()}
+const permTxt=p=>p=='none'?'This device or browser cannot show notifications. The "Collect money today" box still appears inside the app.':p=='denied'?(LN()?'Notifications are off. Turn them on for Ad ZoneX Billing in your phone: Settings > Apps > Ad ZoneX Billing > Notifications.':'Notifications are blocked. Allow them for this site in the browser settings.'):p=='granted'?(LN()?'Notifications are on. You get one on the day, at the time above, even when the app is closed.':isDesk()?'Notifications are on. You get one on the day, at the time above. Closing the window keeps the app running in the tray so reminders still arrive. Quit it from the tray icon.':'Notifications are on. You get one on the day, at the time above, while the app or browser is open. Installed Chrome and Edge apps also check in the background. For reminders with the app fully closed on a phone, use the Android app.'):'Notifications are not turned on yet.';
+function fireNote(t,o){o=o||{};const L=LN();
+if(L){L.schedule({notifications:[{id:1,title:t,body:o.body||'',schedule:{at:new Date(Date.now()+1500)},channelId:'pay',smallIcon:'ic_stat_zx',extra:{go:'#/c'}}]}).catch(x=>console.warn('note',x));return}
+if(!window.Notification||Notification.permission!='granted')return;
+const direct=()=>{try{const n=new Notification(t,o);n.onclick=()=>{try{window.focus()}catch{}location.hash='#/c'}}catch{}};
+if(location.protocol.startsWith('http')&&navigator.serviceWorker)navigator.serviceWorker.getRegistration().then(r=>r?r.showNotification(t,o):direct()).catch(direct);else direct()}
+const hmOf=()=>/^\d{2}:\d{2}$/.test(S.set.rt||'')?S.set.rt:'09:00',noteLine=x=>x.n+' - ₹'+n2(x.a)+(x.ph?' ('+x.ph+')':'');
+function remCheck(){if(LN())return;const L=cdue().filter(x=>x.d===today());if(!L.length||!window.Notification||Notification.permission!='granted'||S.set.rn===today())return;const n=new Date(),hm=String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');if(hm<hmOf())return;S.set.rn=today();save();
+fireNote('Collect money today ('+L.length+')',{body:L.map(noteLine).join('\n'),icon:'icon-192.png',tag:'zx-pay-'+today()});noteCache()}
+/* browser only: hand the list to the service worker so it can notify without the page */
+async function noteCache(){try{if(LN()||!window.caches||!location.protocol.startsWith('http'))return;const c=await caches.open('zx-note');let old='';try{const r=await c.match('due.json');if(r)old=(await r.json()).last||''}catch{}
+await c.put('due.json',new Response(JSON.stringify({rt:hmOf(),last:[old,S.set.rn||''].sort().pop(),list:calL().filter(x=>!x.ok).map(x=>({d:x.d,n:x.n,a:x.a,ph:x.ph}))})))}catch{}}
+function noteBg(){try{if(LN()||!navigator.serviceWorker||!location.protocol.startsWith('http'))return;navigator.serviceWorker.ready.then(r=>r.periodicSync&&r.periodicSync.register('zx-due',{minInterval:3600e3})).catch(()=>{})}catch{}}
+/* phone app: schedule one alarm per day that has someone to collect from (next 60 days). Run again after every change. */
+let schT=0;function schedNote(){clearTimeout(schT);schT=setTimeout(schedNote0,1200)}
+async function schedNote0(){noteCache();const L=LN();if(!L){if(window.Notification&&Notification.permission=='granted')noteBg();return}
+try{if(await notePerm()!=='granted')return;
+await L.createChannel({id:'pay',name:'Payment reminders',description:'Tells you who is due to pay today',importance:4,visibility:1,vibration:true});
+const pn=await L.getPending();if(pn&&pn.notifications&&pn.notifications.length)await L.cancel({notifications:pn.notifications.map(n=>({id:n.id}))});
+const hm=hmOf(),now=Date.now(),by={};calL().filter(x=>!x.ok&&x.d>=today()).forEach(x=>(by[x.d]=by[x.d]||[]).push(x));
+const list=Object.keys(by).sort().map(d=>({d,at:new Date(d+'T'+hm+':00'),L:by[d]})).filter(g=>+g.at>now+5000).slice(0,60).map(g=>({id:+g.d.replace(/-/g,''),title:'Collect money today ('+g.L.length+')',body:g.L.map(noteLine).join(', '),largeBody:g.L.map(noteLine).join('\n'),schedule:{at:g.at,allowWhileIdle:true},channelId:'pay',smallIcon:'ic_stat_zx',extra:{go:'#/c'}}));
+if(list.length)await L.schedule({notifications:list})}catch(x){console.warn('schedule notifications',x)}}
+async function exactAsk(){const L=LN();if(!L||!L.checkExactNotificationSetting)return;try{const r=await L.checkExactNotificationSetting();if(r&&r.exact_alarm==='denied'&&!localStorage.getItem('zx-exact')){localStorage.setItem('zx-exact','1');if(confirm('To get the reminder exactly on time, allow "Alarms & reminders" for this app on the next screen.'))await L.changeExactNotificationSetting()}}catch{}}
+setTimeout(()=>{const L=LN();if(L&&L.addListener){try{L.addListener('localNotificationActionPerformed',()=>{if(location.hash=='#/c')route();else location.hash='#/c'})}catch{}}},800);setTimeout(schedNote0,2500);
 let cY=new Date().getFullYear(),cM=new Date().getMonth(),cSel=today(),cEd=null,cF={t:'bal'};
 function cal(){const T=today(),all=calL(),by={};all.forEach(x=>(by[x.d]=by[x.d]||[]).push(x));
 const mm=String(cM+1).padStart(2,'0'),pre=cY+'-'+mm,f0=new Date(cY,cM,1).getDay(),nd=new Date(cY,cM+1,0).getDate();let cells='';
@@ -412,7 +441,7 @@ const DL=(by[cSel]||[]).slice().sort((a,b)=>a.u-b.u),dd=new Date(cSel+'T00:00:00
 const ds=S.docs.filter(d=>!d.del&&(!isBill(d)||bal(d)>.005)).sort((a,b)=>b.u-a.u).slice(0,300);if(cF.doc&&!ds.find(d=>d.id==cF.doc)){const d=S.docs.find(x=>x.id==cF.doc&&!x.del);if(d)ds.unshift(d)}
 const custs=[...new Set(S.docs.filter(d=>!d.del&&d.cust).map(d=>d.cust))].slice(0,500),sel=(v,x)=>v==x?' selected':'';
 const ent=x=>{const w=waNum(x.ph),dc=x.doc&&S.docs.find(z=>z.id==x.doc&&!z.del);return `<div class="ent${x.ok?' dn':''}"><div><b>${e(x.n)}</b> <span class="chip">${CTL[x.t]}</span> <b class="am">₹ ${n2(x.a)}</b>${x.ok?' <span class="tick">✓</span>':''}<br><small>${x.ph?e(x.ph):''}${dc?(x.ph?' · ':'')+e(no(dc)):''}${x.note?((x.ph||dc)?' · ':'')+e(x.note):''}</small></div><div class="act">${x.ph?`<a class="btn ghost sm" href="tel:${e(telH(x.ph))}">Call</a>`:''}${w?`<a class="btn ghost sm" target="_blank" rel="noopener noreferrer" href="https://wa.me/${w}">WhatsApp</a>`:''}${x.ok?`<button class="ghost sm" data-cun="${e(x.id)}">Undo</button>`:`<button class="sm" data-cdn="${e(x.id)}">Received</button>`}<button class="ghost sm" data-ced="${e(x.id)}">Edit</button><button class="ghost sm" data-cdel="${e(x.id)}" aria-label="Delete entry">✕</button></div></div>`};
-const perm=!window.Notification?'This device or browser cannot show notifications. The "Collect money today" box still appears inside the app.':Notification.permission=='granted'?'Notifications are on. You get one on the day, at the time above, while the app is open or installed.':Notification.permission=='denied'?'Notifications are blocked. Allow them for this site in the browser settings.':'Notifications are not turned on yet.';
+const perm='';
 app.innerHTML=`<div class="state"><h1>Calendar</h1><small>To collect this month: <b>₹ ${n2(exp1)}</b> · Received: <b>₹ ${n2(got)}</b></small></div>
 <div class="card"><div class="cmh"><div class="act"><button class="ghost" data-cn="-1" aria-label="Previous month">‹</button><button class="ghost" data-cn="0">Today</button><button class="ghost" data-cn="1" aria-label="Next month">›</button></div><h2>${MN[cM]} ${cY}</h2></div>
 <div class="cal">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(x=>`<div class="cdh">${x}</div>`).join('')}${cells}</div><p class="hint">Click a date to note who will pay that day. Dates with money to collect have a green border.</p></div>
@@ -424,13 +453,14 @@ app.innerHTML=`<div class="state"><h1>Calendar</h1><small>To collect this month:
 <div><label>Amount (₹)<input id="ca" type="number" min="0" step="any" inputmode="decimal" value="${e(cF.a||'')}"></label></div><div class="s2"><label>Note (optional)<input id="cno" value="${e(cF.note||'')}"></label></div></div>
 <p class="hint">Link a bill and Full, Half or Balance fills the amount for you. For any other amount, type it.</p><div class="act"><button data-ca="save">${cEd?'Update entry':'Add to calendar'}</button>${cEd?'<button class="ghost" data-ca="cancel">Cancel</button>':''}</div></div>
 <div class="card"><h2>Reminder</h2><p class="hint" style="margin-top:0">On the day, every page shows a "Collect money today" box with Call and WhatsApp buttons for each person. You can also get a notification at this time:</p><div class="act" style="align-items:flex-end"><label style="width:150px">Remind me at<input type="time" id="rt" value="${e(S.set.rt||'09:00')}"></label><button class="ghost" data-nt="1">Turn on notifications</button></div><p class="hint" id="nts">${perm}</p></div>`;
+notePerm().then(p=>{const n=$('#nts');if(n)n.textContent=permTxt(p)});
 const recalc=()=>{const id=$('#cb').value,t=$('#ct').value;if(id&&t!='custom'){const v=calAmt(id,t);$('#ca').value=v>0?v:''}};
 const save1=()=>{const n=$('#cn').value.trim(),a=+$('#ca').value;if(!n){alert('Enter the customer name.');return}if(!(a>0)||!isFinite(a)||a>=1e10){alert('Enter the amount this customer will pay.');return}
 const o=okCal({id:cEd||uid(),d:cSel,n,ph:$('#cp').value.trim(),t:$('#ct').value,a:r2(a),doc:$('#cb').value,note:$('#cno').value.trim(),ok:0,u:Date.now()}),i=S.set.cal.findIndex(x=>x.id==cEd);
 if(i>=0){o.ok=S.set.cal[i].ok;S.set.cal[i]=o}else S.set.cal.push(o);cEd=null;cF={t:'bal'};sch();cal()};
 app.onfocusout=null;
 app.oninput=ev=>{const t=ev.target;if(t.id=='cn'){const nm=t.value.trim().toLowerCase();if(!nm)return;const m=S.docs.filter(d=>!d.del&&String(d.cust||'').trim().toLowerCase()==nm).sort((a,b)=>b.u-a.u);if(!m.length)return;if(!$('#cp').value)$('#cp').value=m[0].phone||'';const due=m.find(d=>!isBill(d)||bal(d)>.005);if(due&&!$('#cb').value){$('#cb').value=due.id;if($('#cb').value)recalc()}}};
-app.onchange=ev=>{const t=ev.target;if(t.id=='cb'){const d=S.docs.find(x=>x.id==t.value&&!x.del);if(d){if(!$('#cn').value)$('#cn').value=d.cust||'';if(!$('#cp').value)$('#cp').value=d.phone||''}recalc()}else if(t.id=='ct')recalc();else if(t.id=='rt'){S.set.rt=/^\d{2}:\d{2}$/.test(t.value)?t.value:'09:00';S.set.rn='';save()}};
+app.onchange=ev=>{const t=ev.target;if(t.id=='cb'){const d=S.docs.find(x=>x.id==t.value&&!x.del);if(d){if(!$('#cn').value)$('#cn').value=d.cust||'';if(!$('#cp').value)$('#cp').value=d.phone||''}recalc()}else if(t.id=='ct')recalc();else if(t.id=='rt'){S.set.rt=/^\d{2}:\d{2}$/.test(t.value)?t.value:'09:00';S.set.rn='';save();schedNote()}};
 app.onkeydown=ev=>{const t=ev.target;if(ev.key!='Enter')return;if(t.dataset.cd){cSel=t.dataset.cd;cEd=null;cF={t:'bal'};cal()}else if(['cn','cp','ca','cno'].includes(t.id)){ev.preventDefault();save1()}};
 app.onclick=async ev=>{const b=ev.target.closest('[data-cd],[data-cn],[data-ca],[data-ced],[data-cdel],[data-cdn],[data-cun],[data-nt]');if(!b)return;const D=b.dataset;
 if(D.cd){cSel=D.cd;cEd=null;cF={t:'bal'};cal();return}
@@ -440,7 +470,8 @@ if(D.ced){const x=S.set.cal.find(y=>y.id==D.ced);if(x){cEd=x.id;cSel=x.d;cF={n:x
 if(D.cdel){if(confirm('Delete this entry?')){const x=S.set.cal.find(y=>y.id==D.cdel);if(x){x.del=1;x.u=Date.now();sch();cal()}}return}
 if(D.cdn){b.disabled=true;await calDone(D.cdn);cal();return}
 if(D.cun){const x=S.set.cal.find(y=>y.id==D.cun);if(x){x.ok=0;x.u=Date.now();sch();cal()}return}
-if(D.nt){if(!window.Notification){alert('This device or browser cannot show notifications.');return}Notification.requestPermission().then(r=>{if(r=='granted')fireNote('Notifications are on',{body:'You will be reminded on the day someone is due to pay.',icon:'icon-192.png'});cal()})}}}
+if(D.nt){const p0=await notePerm();if(p0=='none'){alert('This device or browser cannot show notifications.');return}
+const p=p0=='denied'&&!LN()?'denied':await noteAsk();if(p=='granted'){fireNote('Notifications are on',{body:'You will be reminded on the day someone is due to pay.',icon:'icon-192.png'});await exactAsk();schedNote0();noteBg()}else alert(permTxt(p));cal()}}}
 
 /* ===== Expenses ===== */
 let xT='today',xF=today(),xTo=today(),xEd=null,xFm={};
@@ -464,7 +495,9 @@ else if(k=='pdf'){const P=await renderPdf(html,'Expenses '+lab);await saveFile(b
 else if(k=='img')await saveFile(base+'.png',await renderImg(html),'image/png','Expenses '+lab);
 else if(k=='prn'){if(isNat()){const P=await renderPdf(html,'Expenses '+lab);await saveFile(base+'.pdf',P.output('blob'),'application/pdf','Expenses '+lab,true)}else pj(html)}}
 catch(x){console.warn(x);if(!x||x.name!='AbortError')alert('Could not create the file. Please try again.')}finally{b.disabled=false}}
-function expn(){const snap=()=>{if($('#xa'))xFm={d:$('#xd').value,c:$('#xc').value,n:$('#xn').value,a:$('#xa').value,m:$('#xm').value}};snap();
+// Remember what is typed in the form, only when the page is redrawn for another reason (tab, date range, delete).
+const xSnap=()=>{if($('#xa'))xFm={d:$('#xd').value,c:$('#xc').value,n:$('#xn').value,a:$('#xa').value,m:$('#xm').value}};
+function expn(){
 const L=xList(),TT=L.reduce((a,x)=>a+x.a,0),T=today(),td=xAll().filter(x=>x.d==T).reduce((a,x)=>a+x.a,0),mo=xAll().filter(x=>x.d.startsWith(T.slice(0,7))).reduce((a,x)=>a+x.a,0),lab=xRange()[2],cats=[...new Set([...XC,...xAll().map(x=>x.c).filter(Boolean)])],cs={};L.forEach(x=>{const c=x.c||'Other';cs[c]=(cs[c]||0)+x.a});
 const f=xFm,fd=dOk(f.d)?f.d:T,TABS=[['today','Today'],['month','This month'],['all','All'],['range','Pick dates']];
 app.innerHTML=RB()+`<div class="state"><h1>Expenses</h1><div class="act"><button class="ghost" data-xe="pdf">PDF</button><button class="ghost" data-xe="img">Image</button><button class="ghost" data-xe="txt">Text</button><button data-xe="prn">Print</button></div></div>
@@ -480,12 +513,12 @@ const sv1=()=>{const a=+$('#xa').value,d=$('#xd').value;if(!dOk(d)){alert('Pick 
 const o=okExp({id:xEd||uid(),d,c:$('#xc').value.trim()||'Other',n:$('#xn').value.trim(),a:r2(a),m:$('#xm').value,u:Date.now()}),i=S.set.exp.findIndex(x=>x.id==xEd);if(i>=0)S.set.exp[i]=o;else S.set.exp.push(o);
 xEd=null;xFm={d:d,m:o.m};sch();expn();const n=$('#xn');n&&n.focus()};
 app.oninput=null;
-app.onchange=ev=>{const t=ev.target;if(t.id=='xf'||t.id=='xto'){xF=$('#xf').value;xTo=$('#xto').value;expn()}};
+app.onchange=ev=>{const t=ev.target;if(t.id=='xf'||t.id=='xto'){xSnap();xF=$('#xf').value;xTo=$('#xto').value;expn()}};
 app.onkeydown=ev=>{if(ev.key=='Enter'&&['xd','xc','xn','xa'].includes(ev.target.id)){ev.preventDefault();sv1()}};
 app.onclick=ev=>{const b=ev.target.closest('[data-xa],[data-xt],[data-xe],[data-xed],[data-xdel]');if(!b)return;const D=b.dataset;
-if(D.xt){snap();xT=D.xt;expn();return}if(D.xa=='add'){sv1();return}if(D.xa=='cancel'){xEd=null;xFm={};expn();return}
+if(D.xt){xSnap();xT=D.xt;expn();return}if(D.xa=='add'){sv1();return}if(D.xa=='cancel'){xEd=null;xFm={};expn();return}
 if(D.xed){const x=S.set.exp.find(y=>y.id==D.xed);if(x){xEd=x.id;xFm={d:x.d,c:x.c,n:x.n,a:x.a,m:x.m};expn();scrollTo(0,0)}return}
-if(D.xdel){if(confirm('Delete this expense?')){const x=S.set.exp.find(y=>y.id==D.xdel);if(x){x.del=1;x.u=Date.now();if(xEd==x.id){xEd=null;xFm={}}sch();expn()}}return}
+if(D.xdel){if(confirm('Delete this expense?')){const x=S.set.exp.find(y=>y.id==D.xdel);if(x){x.del=1;x.u=Date.now();xSnap();if(xEd==x.id){xEd=null;xFm={}}sch();expn()}}return}
 if(D.xe)xExport(D.xe,b)}}
 
 function route(){const h=location.hash;scrollTo(0,0);acHide();

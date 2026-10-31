@@ -70,7 +70,7 @@ jobs:
           cp -r native/resources mobile/resources
           cd mobile
           npm init -y > /dev/null
-          npm i --no-audit --no-fund "@capacitor/core@${CAPACITOR_VERSION}" "@capacitor/cli@${CAPACITOR_VERSION}" "@capacitor/android@${CAPACITOR_VERSION}" @capacitor/filesystem@7.1.9 @capacitor/share@7.0.4
+          npm i --no-audit --no-fund "@capacitor/core@${CAPACITOR_VERSION}" "@capacitor/cli@${CAPACITOR_VERSION}" "@capacitor/android@${CAPACITOR_VERSION}" @capacitor/filesystem@7.1.9 @capacitor/share@7.0.4 @capacitor/local-notifications@7.0.7
           npm i -D --no-audit --no-fund @capacitor/assets@3.0.5
           npx cap add android
           npx capacitor-assets generate --android --assetPath resources --iconBackgroundColor '#1f2024' --iconBackgroundColorDark '#1f2024' --splashBackgroundColor '#000000' --splashBackgroundColorDark '#000000'
@@ -131,7 +131,7 @@ jobs:
           cp -r native/resources mobile/resources
           cd mobile
           npm init -y > /dev/null
-          npm i --no-audit --no-fund "@capacitor/core@${CAPACITOR_VERSION}" "@capacitor/cli@${CAPACITOR_VERSION}" "@capacitor/ios@${CAPACITOR_VERSION}" @capacitor/filesystem@7.1.9 @capacitor/share@7.0.4
+          npm i --no-audit --no-fund "@capacitor/core@${CAPACITOR_VERSION}" "@capacitor/cli@${CAPACITOR_VERSION}" "@capacitor/ios@${CAPACITOR_VERSION}" @capacitor/filesystem@7.1.9 @capacitor/share@7.0.4 @capacitor/local-notifications@7.0.7
           npm i -D --no-audit --no-fund @capacitor/assets@3.0.5
           npx cap add ios
           npx capacitor-assets generate --ios --assetPath resources --iconBackgroundColor '#1f2024' --splashBackgroundColor '#000000' --splashBackgroundColorDark '#000000'

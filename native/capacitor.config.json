@@ -15,5 +15,11 @@
   },
   "ios": {
     "backgroundColor": "#000000"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_zx",
+      "iconColor": "#2BFF05"
+    }
   }
 }

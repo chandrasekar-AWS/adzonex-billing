@@ -20,11 +20,25 @@ def manifest(s):
     s = s.replace('android:allowBackup="true"', 'android:allowBackup="false"')
     if 'usesCleartextTraffic' not in s:
         s = s.replace('<application', '<application\n        android:usesCleartextTraffic="false"', 1)
+    perms = ''.join('\n    <uses-permission android:name="android.permission.%s" />' % x for x in ('POST_NOTIFICATIONS', 'SCHEDULE_EXACT_ALARM', 'RECEIVE_BOOT_COMPLETED', 'VIBRATE') if x not in s)
+    if perms:
+        s = s.replace('<application', perms.lstrip('\n') + '\n    <application', 1)
     if 'windowSoftInputMode' not in s:
         s = s.replace('android:launchMode="singleTask"', 'android:launchMode="singleTask"\n            android:windowSoftInputMode="adjustResize"', 1)
     return s
 mp = os.path.join(root, 'app/src/main/AndroidManifest.xml')
 md.parseString(rw(mp, manifest))
+
+# --- Notification icon (white bell on transparent, as Android requires for the status bar)
+def bell():
+    d = os.path.join(root, 'app/src/main/res/drawable')
+    os.makedirs(d, exist_ok=True)
+    open(os.path.join(d, 'ic_stat_zx.xml'), 'w', encoding='utf-8').write(
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">\n'
+        '  <path android:fillColor="#FFFFFFFF" android:pathData="M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.89,2 2,2zM18,16v-5c0,-3.07 -1.64,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.63,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z"/>\n'
+        '</vector>\n')
+bell()
 
 # --- Theme: black status and navigation bars with light icons, black window background
 def styles(s):
