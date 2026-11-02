@@ -29,7 +29,7 @@ function menu() {
   const mac = process.platform === 'darwin';
   return Menu.buildFromTemplate([
     ...(mac ? [{ role: 'appMenu' }] : []),
-    { label: 'File', submenu: [mac ? { role: 'close' } : { role: 'quit' }] },
+    { label: 'File', submenu: [{ label: 'Print preview…', accelerator: 'CmdOrCtrl+P', click: () => { if (win && !win.isDestroyed()) win.webContents.executeJavaScript('window.zxPrintPage && window.zxPrintPage()').catch(() => {}); } }, { type: 'separator' }, mac ? { role: 'close' } : { role: 'quit' }] },
     { role: 'editMenu' },
     { label: 'View', submenu: [{ role: 'reload' }, { role: 'togglefullscreen' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }] },
     { role: 'windowMenu' }

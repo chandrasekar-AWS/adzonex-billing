@@ -18,6 +18,7 @@ TXT.forEach(k=>{if(k in v)o[k]=sx(v[k],k=='terms'||k=='addr'?2000:200)});
 if('svv' in v)o.svv=+v.svv||0;
 if(v.colors&&typeof v.colors=='object')o.colors=Object.fromEntries(Object.keys(DC).map(k=>[k,hx(v.colors[k],DC[k])]));
 if(Array.isArray(v.services))o.services=ob(v.services).map(okSv);
+if(Array.isArray(v.xcat))o.xcat=[...new Set(v.xcat.map(c=>sx(c,40).trim()).filter(Boolean))].slice(0,60);
 if(Array.isArray(v.cal))o.cal=ob2(v.cal).map(okCal).filter(Boolean);
 if(Array.isArray(v.exp))o.exp=ob2(v.exp).map(okExp).filter(Boolean);
 return o}
@@ -72,7 +73,7 @@ throw new Error('Unknown action')}
 const pend=new Set();let tm;
 function touch(d){if(!S.docs.includes(d))return;d.u=Date.now();save();pend.add(d.id);clearTimeout(tm);tm=setTimeout(push,800)}
 function commit(d){if(!S.docs.includes(d)){d.estNo=d.estNo||mkNo(d.date);lg(d,'Estimate '+d.estNo+' saved');S.docs.unshift(d)}touch(d)}
-const SH=['name','addr','gst','phone','email','bank','acc','ifsc','holder','payto','terms','copy','auto','services','svv','logo','ne','nb','bw','colors','cal','exp'];
+const SH=['name','addr','gst','phone','email','bank','acc','ifsc','holder','payto','terms','copy','auto','services','svv','logo','ne','nb','bw','colors','cal','exp','xcat'];
 const sch=()=>{S.set.su=Date.now();S.pset=1;save();clearTimeout(tm);tm=setTimeout(push,800);schedNote()};
 async function push(){if(!cloud())return;const ids=[...pend];try{st('Saving…');pend.clear();if(ids.length)await api('push',{docs:S.docs.filter(d=>ids.includes(d.id))});if(S.pset){await api('pushset',{set:{u:S.set.su,v:Object.fromEntries(SH.map(k=>[k,S.set[k]]))}});S.pset=0;save()}LEGACY?st('Synced (not shared)','ok','Your Supabase database is still the older private version, so bills are NOT shared between logins.\n\nTo share them: Supabase > SQL Editor > paste everything from backend/supabase.sql > Run. Your bills are kept.'):st('Synced','ok')}catch(x){console.warn('push',x);ids.forEach(i=>pend.add(i));syncFail(x,true);clearTimeout(tm);tm=setTimeout(push,15000)}}
 let PULLING=null,LASTPULL=0;function pull(){if(PULLING)return PULLING;return PULLING=pull0().finally(()=>{PULLING=null;LASTPULL=Date.now()})}
@@ -96,7 +97,11 @@ S.set.services=S.set.services.filter(v=>v&&typeof v=='object');if(!S.set.service
 S.set.services.forEach(v=>{v.c=v.c||'Other';v.k=v.k||'pr';v.i=v.i||'images/logo-design.svg';v.h=v.h||hsnFor(v.n)});
 S.set.services.forEach(v=>{v.g=GR.includes(v.g)?v.g:grOf(v);v.k=v.g=='Digital'?'dm':'pr'});
 function lg(d,t){(d.log=d.log||[]).push({t:Date.now(),e:t})}
-function pj(h){const w=document.createElement('div');w.className='pw';w.innerHTML=h;document.body.append(w);document.body.classList.add('pj');try{print()}finally{w.remove();document.body.classList.remove('pj')}}
+function pj(h){document.querySelectorAll('.pw').forEach(x=>x.remove());const w=document.createElement('div');w.className='pw';w.innerHTML=h;document.body.append(w);document.body.classList.add('pj');
+const done=()=>{w.remove();document.body.classList.remove('pj');removeEventListener('afterprint',done)};
+/* phones/tablets: print() can return at once, so wait until the print window is closed. Computers wait inside print() */
+if(mobileUA()){addEventListener('afterprint',done);setTimeout(done,90000);try{print()}catch(x){done();throw x}return}
+try{print()}finally{done()}}
 const isNat=()=>{const C=window.Capacitor;return !!(C&&C.isNativePlatform&&C.isNativePlatform())};
 const bl=()=>({n:'',h:'',s:'',q:'',u:'',p:''}),bd=()=>({n:'',d:'',m:'',p:''});
 const newDoc=()=>({id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),estNo:'',billNo:'',disc:'',date:today(),cust:'',phone:'',email:'',addr:'',cgst:'',pos:'',sig:'',hsn:true,igst:false,gst:false,rate:18,rem:'',terms:S.set.terms,items:[bl()],dm:[bd()],pay:[],log:[]});
@@ -128,7 +133,29 @@ if(isNat()&&C.Plugins.Filesystem&&C.Plugins.Share){const data=await b64(blob);co
 if(mobileUA()&&navigator.canShare){try{const f=new File([blob],name,{type:mime});if(navigator.canShare({files:[f]})){await navigator.share({files:[f],title:title||name});return}}catch(x){if(x&&x.name==='AbortError')return}}
 const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000)}
 async function pdf(d,prn){const P=await pdfMake(d),fn=(isBill(d)?'Invoice-':'Estimate-')+(no(d)||'draft').replace(/[\/\\]/g,'-')+'.pdf';await saveFile(fn,P.output('blob'),'application/pdf',fn,prn)}
-async function histPdf(prn){const el=document.querySelector('.rep');if(!el)return;const P=await renderPdf('<div class="rep" style="display:block;width:210mm">'+el.innerHTML+'</div>','Invoice history');await saveFile('Invoice-history-'+today()+'.pdf',P.output('blob'),'application/pdf','Invoice history',prn)}
+/* ===== Print preview: shows the document first, then Print or Save PDF. Used for bills, history and expenses ===== */
+const MY=v=>{const p=String(v||'').split('-');return(MN[(+p[1]||1)-1]||'')+' '+p[0]},monthsOf=a=>[...new Set(a.filter(dOk).map(v=>v.slice(0,7)))].sort().reverse();
+function pvOpen(o){document.querySelectorAll('.pvw').forEach(x=>x.remove());const sh=$('.shell'),from=document.activeElement,w=document.createElement('div');
+w.className='pvw';w.setAttribute('role','dialog');w.setAttribute('aria-modal','true');w.setAttribute('aria-label',o.title);
+const msel=()=>o.months?`<label class="pvm">Month<select data-pm aria-label="Month">${[...(o.first?[o.first]:[]),['','All months'],...o.months.map(m=>[m,MY(m)])].map(([v,l])=>`<option value="${e(v)}"${v===o.month?' selected':''}>${e(l)}</option>`).join('')}</select></label>`:'';
+w.innerHTML=`<div class="pvb"><div class="pvt"><b>${e(o.title)}</b><small id="pvi"></small></div>${msel()}<div class="pva"><button data-pv="print">Print</button><button class="ghost" data-pv="pdf">Save PDF</button><button class="ghost" data-pv="x">Close</button></div></div><div class="pvs" id="pvs"><div class="pvp" id="pvp"><div class="pvz" id="pvz"></div></div><p class="pve" id="pve" hidden>Nothing to print for this selection.</p></div>`;
+document.body.append(w);if(sh)sh.inert=true;
+let html='';const SC=w.querySelector('#pvs'),PP=w.querySelector('#pvp'),Z=w.querySelector('#pvz'),EM=w.querySelector('#pve'),info=w.querySelector('#pvi'),bP=w.querySelector('[data-pv=print]'),bF=w.querySelector('[data-pv=pdf]');
+const fit=()=>{if(!Z.firstElementChild)return;const W=Math.ceil(210*96/25.4),k=Math.min(1,Math.max(.2,(SC.clientWidth-24)/W));Z.style.width=W+'px';Z.style.transform='scale('+k+')';PP.style.width=Math.round(W*k)+'px';PP.style.height=Math.round(Z.offsetHeight*k)+'px';
+const pg=Math.max(1,Math.ceil(Z.offsetHeight/(297*96/25.4)-.03));info.textContent='A4 · about '+pg+(pg>1?' pages':' page')};
+const draw=()=>{html=o.build()||'';Z.innerHTML=html;PP.hidden=!html;EM.hidden=!!html;bP.disabled=bF.disabled=!html;info.textContent=html?'':'';if(html)fit()};
+const close=()=>{document.removeEventListener('keydown',esc);removeEventListener('resize',fit);w.remove();if(sh)sh.inert=false;try{if(from&&from.isConnected&&from.focus)from.focus()}catch{}if(o.onClose)o.onClose()},
+esc=ev=>{if(ev.key=='Escape'){ev.preventDefault();close()}};
+w.addEventListener('keydown',ev=>{if(ev.key!='Tab')return;const f=[...w.querySelectorAll('button:not([disabled]),select')],a=f[0],z=f[f.length-1];if(!a)return;if(ev.shiftKey&&document.activeElement===a){ev.preventDefault();z.focus()}else if(!ev.shiftKey&&document.activeElement===z){ev.preventDefault();a.focus()}});
+w.addEventListener('click',async ev=>{const b=ev.target.closest('[data-pv]');if(!b||b.disabled)return;const a=b.dataset.pv;if(a=='x'){close();return}if(!html)return;
+const fn=(typeof o.file=='function'?o.file():o.file||'Document').replace(/[\/\\]/g,'-')+'.pdf';bP.disabled=bF.disabled=true;
+try{if(a=='print'){if(o.onPrint)o.onPrint();if(isNat()){const P=await renderPdf(html,o.title);await saveFile(fn,P.output('blob'),'application/pdf',o.title,true)}else pj(html)}
+else{if(o.onPdf)o.onPdf();const P=await renderPdf(html,o.title);await saveFile(fn,P.output('blob'),'application/pdf',o.title)}}
+catch(x){console.warn(x);if(!x||x.name!='AbortError')alert(a=='print'?'Could not print. Please try again.':'Could not create the PDF. Please try again.')}
+finally{bP.disabled=bF.disabled=!html}});
+w.addEventListener('change',ev=>{const t=ev.target;if(t.dataset.pm===undefined)return;o.month=t.value;if(o.onMonth)o.onMonth(t.value);draw()});
+addEventListener('resize',fit);document.addEventListener('keydown',esc);draw();bP.focus()}
+function billPv(d){const T=isBill(d)?'Invoice':'Estimate';pvOpen({title:T+' '+no(d),file:()=>T+'-'+(no(d)||'draft'),build:()=>paper(d),onPrint:()=>{lg(d,'Printed');touch(d)},onPdf:()=>{lg(d,'PDF downloaded');touch(d)},onClose:()=>{if(location.hash=='#/d/'+d.id&&S.docs.includes(d))bill(d)}})}
 const e=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const n2=x=>(+x||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
 const pad=n=>String(n).padStart(4,'0'),today=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
@@ -247,7 +274,7 @@ const trow=()=>md=='dm'?`<div class="xc"></div><div class="xc b">Total</div><div
 const H=()=>md=='dm'?['#','Service','Details','Months','Monthly fee','Amount','']:['#','Service',...(hs()?['HSN/SAC']:[]),'Size','Quantity','Unit','Price','Amount',''];
 const sheet=()=>`<div class="xs ${md}${md=='pr'&&!hs()?' nh':''}"><div class="xr xh">${H().map(h=>`<div class="xc">${h}</div>`).join('')}</div><div id="rows">${rowsH(gk())}</div><div class="xr xt" id="trow">${trow()}</div></div>`;
 const head=()=>{const[st,c]=stat(d);return `<div><h1>${sv()?e(no(d)):'New estimate'}</h1><span class="chip ${c}">${st}</span> <small>${isBill(d)?'Paid ₹ '+n2(pd(d))+' of ₹ '+n2(tot(d)):sv()?'No payment yet':'Not saved yet'}</small></div>`};
-const bAct=isBill(d)?ib('print','Print','print')+ib('pdf','Download PDF','pdf')+ib('mail','Email copy','mail')+ib('wa','Send on WhatsApp','wa'):sv()?ib('pdf','Download estimate PDF','pdf'):'';
+const bAct=isBill(d)?ib('print','Print','print')+ib('pdf','Download PDF','pdf')+ib('mail','Email copy','mail')+ib('wa','Send on WhatsApp','wa'):sv()?ib('print','Print','print')+ib('pdf','Download estimate PDF','pdf'):'';
 const acts=(sv()?`<label class="swt sm"><input type="checkbox" role="switch" data-s="bw" ${S.set.bw?'checked':''}><span class="trk"><span class="knob"></span></span><span class="swl">Black &amp; white</span></label>`:'')+bAct;
 const pays=()=>d.pay.map((x,k)=>`<div class="pay"><div>${dm(x.d)}</div><div>₹ ${n2(x.a)}</div><div>${e(x.m)}</div><button class="ghost" data-a="dp" data-i="${k}" aria-label="Remove payment">✕</button></div>`).join('');
 const gdet=()=>d.gst?`<div>Taxable Amount<span>₹ ${n2(txb(d))}</span></div>`+(d.igst?`<div>IGST @ ${n2(rt(d))}%<span>₹ ${n2(ig(d))}</span></div>`:`<div>CGST @ ${n2(rt(d)/2)}%<span>₹ ${n2(cg(d))}</span></div><div>SGST @ ${n2(rt(d)/2)}%<span>₹ ${n2(sg2(d))}</span></div>`):'';
@@ -277,7 +304,7 @@ app.onclick=ev=>{const b=ev.target.closest('[data-a],[data-m]');if(!b)return;if(
 const a=b.dataset.a,i=+b.dataset.i,g=b.dataset.g;
 if(a=='save'){if(!String(d.cust||'').trim()){alert('Enter the client name first.');return}if(!['items','dm'].some(x=>d[x].some(r=>String(r.n||'').trim()))){alert('Add at least one service first.');return}if(!dOk(d.date))d.date=today();const nw=!sv();commit(d);if(nw)draft=null;flash=nw?'Estimate '+no(d)+' saved. Open it here to record the payment.':'Saved '+no(d);location.hash='#/h';return}
 if(a=='clr'){if(confirm('Clear everything on this page?')){draft=null;route()}return}
-if(a=='print'){lg(d,'Printed');touch(d);isNat()?pdf(d,true).catch(x=>{console.warn(x);alert('Could not print.')}):pj(paper(d));return}
+if(a=='print'){billPv(d);return}
 if(a=='pdf'){b.disabled=true;lg(d,'PDF downloaded');touch(d);pdf(d).catch(x=>{console.warn(x);alert('Could not create the PDF. Please try again.')}).finally(()=>b.disabled=false);return}
 if(a=='wa'){waShare(d);return}
 if(a=='mail'){mail(d);return}
@@ -287,30 +314,46 @@ if(a=='sigdel'){d.sig='';touch(d);$('#sigbox').innerHTML=sigH();return}
 if(a=='adv'){$('#pa').value=(tot(d)*.7).toFixed(2);return}
 if(a=='dp'){if(confirm('Remove this payment?')){d.pay.splice(i,1);lg(d,'Payment removed');fix(d);touch(d);bill(d)}return}
 if(a=='pay'){const v=+$('#pa').value;if(!(v>0)||!isFinite(v)||v>=1e10){alert('Enter a payment amount.');return}if(v>bal(d)+.005&&!confirm('That is more than the balance of ₹ '+n2(bal(d))+'. Record it anyway?'))return;d.pay.push({d:dOk($('#pd').value)?$('#pd').value:today(),a:v,m:$('#pm').value});lg(d,'Payment ₹'+n2(v)+' received ('+$('#pm').value+')');(async()=>{touch(d);fix(d);touch(d);bill(d);if(S.set.auto&&mailOk())mail(d,1)})()}}}
-let tab='all',q='',qb='',qd='';
+let tab='all',q='',qb='',qd='',qm='';
 const PM=['Cash','UPI','Bank','Cheque'],paidOk=d=>isBill(d)&&bal(d)<=0.005;
-const tr=(d,x)=>`<tr class="row" tabindex="0" data-o="${e(d.id)}"><td><b>${e(no(d))}</b><td>${e(d.cust)||'-'}<td>${dm(d.date)}<td class="r">₹ ${n2(tot(d))}<td class="r">₹ ${n2(pd(d))}<td class="nw">${paidOk(d)?'<span class="tick">✓</span> <b>Paid</b>':`<span class="chip ${stat(d)[1]}">${stat(d)[0]}</span>`}<td class="r bl${paidOk(d)?'':' due'}">₹ ${n2(bal(d))}${x?`<td><div class="pc">${paidOk(d)?'<small>Fully paid</small>':`<input type="number" step="any" inputmode="decimal" placeholder="Amount" data-amt="${e(d.id)}" aria-label="Amount received"><select data-mode="${e(d.id)}" aria-label="Payment mode">${PM.map(m=>`<option>${m}`).join('')}</select><button class="sm" data-add="${e(d.id)}">Add</button>`}</div><td class="nw">${isBill(d)?ib(d.id,'Print','print','sm','data-p')+' ':''}${ib(d.id,'Download PDF','pdf','sm','data-f')}`:''}</tr>`;
-async function addPay(id){const d=S.docs.find(x=>x.id==id&&!x.del);if(!d)return;const v=+document.querySelector(`input[data-amt="${id}"]`).value,m=document.querySelector(`select[data-mode="${id}"]`).value;
+const tr=(d,x)=>`<tr class="row" tabindex="0" data-o="${e(d.id)}"><td><b>${e(no(d))}</b><td>${e(d.cust)||'-'}<td>${dm(d.date)}<td class="r">₹ ${n2(tot(d))}<td class="r">₹ ${n2(pd(d))}<td class="nw">${paidOk(d)?'<span class="tick">✓</span> <b>Paid</b>':`<span class="chip ${stat(d)[1]}">${stat(d)[0]}</span>`}<td class="r bl${paidOk(d)?'':' due'}">₹ ${n2(bal(d))}${x?`<td><div class="pc">${paidOk(d)?'<small>Fully paid</small>':`<input type="number" step="any" inputmode="decimal" placeholder="Amount" data-amt="${e(d.id)}" aria-label="Amount received"><select data-mode="${e(d.id)}" aria-label="Payment mode">${PM.map(m=>`<option>${m}`).join('')}</select><button class="sm" data-add="${e(d.id)}">Add</button>`}</div><td class="nw">${ib(d.id,'Print','print','sm','data-p')+' '}${ib(d.id,'Download PDF','pdf','sm','data-f')}`:''}</tr>`;
+function addPay(id){const d=S.docs.find(x=>x.id==id&&!x.del);if(!d)return;const v=+document.querySelector(`input[data-amt="${id}"]`).value,m=document.querySelector(`select[data-mode="${id}"]`).value;
 if(!(v>0)||!isFinite(v)||v>=1e10){alert('Type the amount received first.');return}
 if(v>bal(d)+.005&&!confirm('That is more than the balance of ₹ '+n2(bal(d))+'. Record it anyway?'))return;
-d.pay.push({d:today(),a:v,m});lg(d,'Payment ₹'+n2(v)+' received ('+m+', from History)');touch(d);if(!d.billNo)await pull();fix(d);touch(d);hist();if(S.set.auto&&mailOk())mail(d,1)}
-function hist(){const A=S.docs.filter(d=>!d.del).sort((a,b)=>b.u-a.u),RC=A.reduce((a,d)=>a+pd(d),0),OB=A.filter(isBill).reduce((a,d)=>a+bal(d),0),ES=A.filter(d=>!isBill(d)).reduce((a,d)=>a+tot(d),0);
-const ql=q.trim().toLowerCase(),dq=q.replace(/\D/g,''),numq=!!dq&&/^[\d\s+()-]+$/.test(q.trim()),bq=qb.trim().toLowerCase();
-const mf=d=>(!ql||String(d.cust||'').toLowerCase().includes(ql)||(numq&&(d.phone||'').replace(/\D/g,'').includes(dq)))&&(!bq||no(d).toLowerCase().includes(bq))&&(!qd||d.date===qd);
-const B=A.filter(mf),isDue=d=>isBill(d)&&bal(d)>.005,TB={all:()=>true,est:d=>!isBill(d),due:isDue,gst:d=>isBill(d)&&!!d.gst,nogst:d=>isBill(d)&&!d.gst},CT={};Object.keys(TB).forEach(k=>CT[k]=B.filter(TB[k]).length);
-const L=B.filter(TB[tab]||TB.all),T=L.reduce((a,d)=>a+tot(d),0),P=L.reduce((a,d)=>a+pd(d),0);
-const tbl=x=>`<div class="sw"><table class="lt"><tr><th>Number<th>Customer<th>Date<th class="r">Total<th class="r">Paid<th>Status<th class="r">Balance${x?'<th>Receive money<th>':''}</tr>${L.map(d=>tr(d,x)).join('')}</table></div>`;
+d.pay.push({d:today(),a:v,m});lg(d,'Payment ₹'+n2(v)+' received ('+m+', from History)');fix(d);touch(d);hist();if(S.set.auto&&mailOk())mail(d,1)}
+const isDue=d=>isBill(d)&&bal(d)>.005,HTB={all:()=>true,est:d=>!isBill(d),due:isDue,gst:d=>isBill(d)&&!!d.gst,nogst:d=>isBill(d)&&!d.gst},HTABS=[['all','All'],['est','Estimate'],['due','Balance due'],['gst','GST bill'],['nogst','Without GST bill']];
+/* the bills that match the tab, the three search boxes and the month. Used by the screen and by the print preview */
+function histSel(){const A=S.docs.filter(d=>!d.del).sort((a,b)=>b.u-a.u),ql=q.trim().toLowerCase(),dq=q.replace(/\D/g,''),numq=!!dq&&/^[\d\s+()-]+$/.test(q.trim()),bq=qb.trim().toLowerCase();
+const mf=d=>(!ql||String(d.cust||'').toLowerCase().includes(ql)||(numq&&(d.phone||'').replace(/\D/g,'').includes(dq)))&&(!bq||no(d).toLowerCase().includes(bq))&&(!qd||d.date===qd)&&(!qm||String(d.date).slice(0,7)===qm);
+const B=A.filter(mf),CT={};Object.keys(HTB).forEach(k=>CT[k]=B.filter(HTB[k]).length);return{A,B,CT,L:B.filter(HTB[tab]||HTB.all)}}
+function hist(){const{A,L,CT}=histSel(),AM=qm?A.filter(d=>String(d.date).slice(0,7)===qm):A,RC=AM.reduce((a,d)=>a+pd(d),0),OB=AM.filter(isBill).reduce((a,d)=>a+bal(d),0),ES=AM.filter(d=>!isBill(d)).reduce((a,d)=>a+tot(d),0),MO=monthsOf([...A.map(d=>d.date),...(qm?[qm+'-01']:[])]),T=L.reduce((a,d)=>a+tot(d),0),P=L.reduce((a,d)=>a+pd(d),0);
+const tbl=`<div class="sw"><table class="lt"><tr><th>Number<th>Customer<th>Date<th class="r">Total<th class="r">Paid<th>Status<th class="r">Balance<th>Receive money<th></tr>${L.map(d=>tr(d,1)).join('')}</table></div>`;
 const sum=`<div class="tt"><div>Billed<span>₹ ${n2(T)}</span></div><div>Paid<span>₹ ${n2(P)}</span></div><div class="gr">Balance<span>₹ ${n2(T-P)}</span></div></div>`;
-const fl=flash;flash='';const TABS=[['all','All'],['est','Estimate'],['due','Balance due'],['gst','GST bill'],['nogst','Without GST bill']];
-app.innerHTML=RB()+(fl?`<div class="toast">${e(fl)}</div>`:'')+`<div class="state"><h1>History</h1><button data-a="ph">Print history</button></div><div class="stats"><div class="hero"><small>Received</small><b>₹ ${n2(RC)}</b></div><div><small>Balance to collect</small><b>₹ ${n2(OB)}</b></div><div><small>Open estimates</small><b>₹ ${n2(ES)}</b></div></div>
-<div class="bar tabs">${TABS.map(t=>`<button class="${tab==t[0]?'on':''}" data-t="${t[0]}">${t[1]}<i class="cnt" aria-label="${CT[t[0]]} items">${CT[t[0]]}</i></button>`).join('')}</div>
-<div class="bar finder"><input id="qn" class="f1" value="${e(q)}" placeholder="Search by customer name or phone" aria-label="Customer name or phone"><input id="qb" class="f2" value="${e(qb)}" placeholder="Invoice or estimate number" aria-label="Invoice or estimate number"><input id="qd" class="f3" type="date" value="${e(qd)}" aria-label="Date"></div>`+
-(L.length?tbl(1)+sum:`<div class="empty">${A.length?'Nothing matches your search.':'No bills yet. Open Billing to create your first one.'}</div>`)+`<div class="rep"><b>${e(S.set.name)}</b><h3>Invoice history${qd?' - '+dm(qd):''}</h3>${L.length?tbl(0)+sum:''}</div>`;
+const fl=flash;flash='';
+app.innerHTML=RB()+(fl?`<div class="toast">${e(fl)}</div>`:'')+`<div class="state"><h1>History</h1><button data-a="ph">Print history</button></div><div class="stats"><div class="hero"><small>Received${qm?' · '+e(MY(qm)):''}</small><b>₹ ${n2(RC)}</b></div><div><small>Balance to collect</small><b>₹ ${n2(OB)}</b></div><div><small>Open estimates</small><b>₹ ${n2(ES)}</b></div></div>
+<div class="bar tabs">${HTABS.map(t=>`<button class="${tab==t[0]?'on':''}" data-t="${t[0]}">${t[1]}<i class="cnt" aria-label="${CT[t[0]]} items">${CT[t[0]]}</i></button>`).join('')}</div>
+<div class="bar finder"><input id="qn" class="f1" value="${e(q)}" placeholder="Search by customer name or phone" aria-label="Customer name or phone"><input id="qb" class="f2" value="${e(qb)}" placeholder="Invoice or estimate number" aria-label="Invoice or estimate number"><input id="qd" class="f3" type="date" value="${e(qd)}" aria-label="Date"><select id="qm" class="f4" aria-label="Month"><option value="">All months</option>${MO.map(m=>`<option value="${e(m)}"${m===qm?' selected':''}>${e(MY(m))}</option>`).join('')}</select></div>`+
+(L.length?tbl+sum:`<div class="empty">${A.length?'Nothing matches your search.':'No bills yet. Open Billing to create your first one.'}</div>`);
 app.onclick=ev=>{const T=ev.target,ad=T.closest('[data-add]'),p=T.closest('[data-p]'),f=T.closest('[data-f]');if(ad){addPay(ad.dataset.add);return}if(T.closest('input,select'))return;
-if(p){const d=S.docs.find(x=>x.id==p.dataset.p);if(d)isNat()?pdf(d,true).catch(x=>{console.warn(x);alert('Could not print.')}):pj(paper(d));return}if(f){const fd=S.docs.find(x=>x.id==f.dataset.f);if(!fd)return;f.disabled=true;pdf(fd).catch(x=>{console.warn(x);alert('Could not create the PDF.')}).finally(()=>f.disabled=false);return}if(T.closest('[data-a=ph]')){if(isNat()){histPdf(true).catch(x=>{console.warn(x);alert('Could not print.')})}else print();return}const t=T.closest('[data-t]'),o=T.closest('[data-o]');if(t){tab=t.dataset.t;hist()}else if(o)location.hash='#/d/'+o.dataset.o};
+if(p){const d=S.docs.find(x=>x.id==p.dataset.p);if(d)billPv(d);return}if(f){const fd=S.docs.find(x=>x.id==f.dataset.f);if(!fd)return;f.disabled=true;pdf(fd).catch(x=>{console.warn(x);alert('Could not create the PDF.')}).finally(()=>f.disabled=false);return}if(T.closest('[data-a=ph]')){histPv();return}const t=T.closest('[data-t]'),o=T.closest('[data-o]');if(t){tab=t.dataset.t;hist()}else if(o)location.hash='#/d/'+o.dataset.o};
 app.onkeydown=ev=>{const t=ev.target;if(ev.key!='Enter')return;if(t.dataset.amt){addPay(t.dataset.amt);return}if(t.dataset.o)location.hash='#/d/'+t.dataset.o};app.oninput=null;app.onchange=null;app.onfocusout=null;
 const keep=(id,v)=>{const el=$('#'+id),p=el.selectionStart;v(el.value);hist();const n=$('#'+id);n.focus();try{n.setSelectionRange(p,p)}catch{}};
-$('#qn').oninput=()=>keep('qn',v=>q=v);$('#qb').oninput=()=>keep('qb',v=>qb=v);$('#qd').onchange=ev=>{qd=ev.target.value;hist()}}
+$('#qn').oninput=()=>keep('qn',v=>q=v);$('#qb').oninput=()=>keep('qb',v=>qb=v);$('#qd').onchange=ev=>{qd=ev.target.value;if(qd)qm='';hist()};$('#qm').onchange=ev=>{qm=ev.target.value;if(qm)qd='';hist()}}
+/* print preview of the history list (follows the tab, the search boxes and the month on screen; the month can also be changed inside the preview) */
+function histLabel(){const t=HTABS.find(x=>x[0]==tab);return[qm?MY(qm):qd?dr(qd):'All months',tab!='all'&&t?t[1]:'',q.trim()?'"'+q.trim()+'"':'',qb.trim()?'No. '+qb.trim():''].filter(Boolean).join(' · ')}
+function histPaper(L){const s=S.set,C=s.colors||DC,hd=hx(C.hd,DC.hd),ac=hx(C.ac,DC.ac),th=hx(C.th,DC.th),tt=hx(C.tt,DC.tt),logo=(lumOf(hd)>.6?window.ZX_LOGO_D:window.ZX_LOGO)||'';
+const R=L.slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:no(a)<no(b)?-1:no(a)>no(b)?1:0),T=R.reduce((a,d)=>a+tot(d),0),Pd=R.reduce((a,d)=>a+pd(d),0),by={};
+R.forEach(d=>{const k=String(d.date).slice(0,7),m=by[k]=by[k]||{n:0,t:0,p:0};m.n++;m.t+=tot(d);m.p+=pd(d)});
+const ks=Object.keys(by).sort(),nE=R.filter(d=>!isBill(d)).length,nI=R.length-nE,nP=R.filter(paidOk).length,stt=d=>!isBill(d)?'Estimate':paidOk(d)?'Paid':'Balance due';
+const msum=ks.length>1?`<h4>Month-wise summary</h4><table class="pq"><thead><tr><th>Month<th class="r">Entries<th class="r">Billed<th class="r">Received<th class="r">Balance</tr></thead><tbody>${ks.map(k=>`<tr><td>${e(MY(k))}<td class="r">${by[k].n}<td class="r nw">₹ ${n2(by[k].t)}<td class="r nw">₹ ${n2(by[k].p)}<td class="r nw">₹ ${n2(by[k].t-by[k].p)}</tr>`).join('')}</tbody></table>`:'';
+return `<div class="zp${s.bw?' bw':''}" style="--hd:${hd};--ac:${ac};--th:${th};--tt:${tt};--hf:${fgOf(hd)};--thf:${fgOf(th)};--ttf:${fgOf(tt)}"><style>${PCSS}</style>
+<div class="ph"><img class="plogo" src="${logo}" alt="${e(s.name)}"><div class="pco"><b>${e(s.name)}</b><div class="pl">${e(s.addr)}</div>${s.gst?'GSTIN : '+e(s.gst)+'<br>':''}Phone : ${e(s.phone)}<br>${e(s.email)}</div></div><div class="pac"></div>
+<div class="pbody"><h3 class="ptt">Invoice History</h3><div class="pinfo"><div class="pbt"><small>SHOWING</small><b>${e(histLabel())}</b></div><div class="pmeta"><div><span>Entries</span><b>${R.length}</b></div><div><span>Printed on</span><b>${dm(today())}</b></div></div></div>
+<table class="pq"><thead><tr><th>#<th>Number<th>Customer<th>Date<th class="r">Total<th class="r">Paid<th>Status<th class="r">Balance</tr></thead><tbody>${R.map((d,k)=>`<tr><td>${k+1}<td class="nw">${e(no(d))}<td>${e(d.cust)||'-'}<td class="nw">${dm(d.date)}<td class="r nw">₹ ${n2(tot(d))}<td class="r nw">₹ ${n2(pd(d))}<td class="nw">${stt(d)}<td class="r nw">₹ ${n2(bal(d))}</tr>`).join('')}</tbody></table>
+${msum}<div class="pbot"><div class="pw2"><b>Summary</b><p>Invoices : ${nI} (${nP} fully paid)</p><p>Estimates : ${nE}</p></div><div class="ptot"><div>Billed<span>₹ ${n2(T)}</span></div><div>Paid<span>₹ ${n2(Pd)}</span></div><div class="gr">Balance<span>₹ ${n2(T-Pd)}</span></div></div></div></div>
+<div class="pft">Month is the bill date. This is a computer-generated report.</div></div>`}
+function histPv(){const mo=monthsOf(S.docs.filter(d=>!d.del).map(d=>d.date));if(qm&&!mo.includes(qm)){mo.push(qm);mo.sort().reverse()}
+pvOpen({title:'Invoice history',file:()=>'Invoice-history-'+(qm||today()),months:mo,month:qm,onMonth:v=>{qm=v;if(v)qd=''},onClose:()=>{if(location.hash=='#/h')hist()},build:()=>{const{L}=histSel();return L.length?histPaper(L):''}})}
 function sets(){const s=S.set,L=s.services;let sq='';
 const F=(k,l,w='')=>`<div class="${w}"><label>${l}<input data-k="${k}" value="${e(s[k])}"></label></div>`;
 const row=([v,k])=>`<div class="svr"><img class="th" src="${e(v.i||'images/logo-design.svg')}" alt=""><input data-i="${k}" data-f="n" value="${e(v.n)}" placeholder="Service name" aria-label="Service name"><input data-i="${k}" data-f="c" value="${e(v.c)}" placeholder="Heading" aria-label="Heading"><select data-i="${k}" data-f="g" aria-label="Title">${GR.map(g=>`<option${v.g==g?' selected':''}>${g}`).join('')}</select><input data-i="${k}" data-f="h" value="${e(v.h)}" placeholder="HSN/SAC" aria-label="HSN/SAC"><input data-i="${k}" data-f="u" value="${e(v.u)}" placeholder="Unit" aria-label="Unit"><input type="number" min="0" step="any" inputmode="decimal" data-i="${k}" data-f="p" value="${e(v.p)}" placeholder="Price" aria-label="Price"><label class="btn ghost up">Photo<input type="file" accept="image/*" data-img="${k}" hidden></label><button class="ghost" data-a="dsv" data-i="${k}" aria-label="Remove service">✕</button></div>`;
@@ -333,7 +376,7 @@ app.oninput=ev=>{const t=ev.target;if(t.dataset.c){const c=t.dataset.c,v=t.value
 app.onchange=ev=>{const t=ev.target,fl=t.files&&t.files[0];if(!fl)return;if(t.dataset.img!==undefined&&!/^image\//.test(fl.type)){alert('Choose an image file.');t.value='';return}if(t.id=='im'&&fl.size>50e6){alert('That file is too large to be a backup.');t.value='';return}const rd=new FileReader();
 if(t.dataset.img!==undefined)rd.onload=()=>{const im=new Image();im.onload=()=>{const k=Math.min(1,360/im.width),c=document.createElement('canvas');c.width=im.width*k;c.height=im.height*k;c.getContext('2d').drawImage(im,0,0,c.width,c.height);L[t.dataset.img].i=c.toDataURL('image/jpeg',.6);sch();$('#svl').innerHTML=svl()};im.onerror=()=>alert('Could not read that image.');im.src=rd.result},rd.readAsDataURL(fl);
 else if(t.id=='lg')rd.onload=()=>{const im=new Image();im.onload=()=>{const k=Math.min(1,240/im.width),c=document.createElement('canvas');c.width=im.width*k;c.height=im.height*k;c.getContext('2d').drawImage(im,0,0,c.width,c.height);S.set.logo=c.toDataURL('image/png');sch();sets()};im.src=rd.result},rd.readAsDataURL(fl);
-else if(t.id=='im')fl.text().then(x=>{try{const j=JSON.parse(x);if(!Array.isArray(j.docs)||!j.set||typeof j.set!='object')throw 0;if(confirm('Restore this backup? Bills in it replace matching bills on this device and in the cloud. Bills that exist only on this device are kept. The email script address stays as it is on this device.')){const docs=j.docs.slice(0,50000).map(okDoc).filter(Boolean),kp=S.docs.filter(l=>!docs.some(b=>b.id===l.id));S={set:{...D0,...S.set,...okSet(j.set),key:''},docs:[...docs,...kp]};if(!Array.isArray(S.set.services)||!S.set.services.length)S.set.services=SV.map(x=>({...x}));docs.forEach(d=>{d.u=Date.now();pend.add(d.id)});S.set.su=Date.now();S.pset=1;save();push();location.hash='#/h';route()}}catch{alert('This is not a valid backup file.')}})};
+else if(t.id=='im')fl.text().then(x=>{try{const j=JSON.parse(x);if(!Array.isArray(j.docs)||!j.set||typeof j.set!='object')throw 0;if(confirm('Restore this backup? Bills in it replace matching bills on this device and in the cloud. Bills that exist only on this device are kept. The email script address stays as it is on this device.')){const docs=j.docs.slice(0,50000).map(okDoc).filter(Boolean),kp=S.docs.filter(l=>!docs.some(b=>b.id===l.id));const bs=okSet(j.set);['cal','exp'].forEach(k=>{if(k in bs)bs[k]=mergeL(S.set[k],bs[k])});S={set:{...D0,...S.set,...bs,key:''},docs:[...docs,...kp]};if(!Array.isArray(S.set.services)||!S.set.services.length)S.set.services=SV.map(x=>({...x}));docs.forEach(d=>{d.u=Date.now();pend.add(d.id)});S.set.su=Date.now();S.pset=1;save();push();location.hash='#/h';route()}}catch{alert('This is not a valid backup file.')}})};
 app.onclick=ev=>{const b=ev.target.closest('[data-a]');if(!b)return;const a=b.dataset.a;
 if(a=='savesets'){save();S.pset=1;push();toast('Settings saved');return}
 if(a=='test'){SCHEMA=null;LEGACY=false;api('ping').then(()=>{S.pset=1;return pull()}).then(()=>{toast('Synced');if(location.hash=='#/s')sets()}).catch(x=>alert(explain(x)[1]))}
@@ -392,7 +435,7 @@ bs.forEach(x=>x.disabled=false)})}
 const calL=()=>S.set.cal.filter(x=>!x.del),cdue=()=>calL().filter(x=>!x.ok&&x.d<=today()).sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:a.n.localeCompare(b.n));
 const calAmt=(id,t)=>{const d=S.docs.find(x=>x.id==id&&!x.del);return d?(t=='full'?tot(d):t=='half'?r2(tot(d)/2):t=='bal'?bal(d):0):0};
 async function calDone(id){const x=S.set.cal.find(y=>y.id==id);if(!x)return false;let rec=false;const d=x.doc&&S.docs.find(z=>z.id==x.doc&&!z.del);
-if(d&&x.a>0&&bal(d)>.005){const v=r2(Math.min(x.a,bal(d)));if(confirm('Also add ₹ '+n2(v)+' as a payment on '+no(d)+'?\n\nOK = add the payment to the bill\nCancel = only mark as received')){d.pay.push({d:today(),a:v,m:'Cash'});lg(d,'Payment ₹'+n2(v)+' received (Cash, from Calendar)');touch(d);if(!d.billNo)await pull();fix(d);touch(d);rec=true}}
+if(d&&x.a>0&&bal(d)>.005){const v=r2(Math.min(x.a,bal(d)));if(confirm('Also add ₹ '+n2(v)+' as a payment on '+no(d)+'?\n\nOK = add the payment to the bill\nCancel = only mark as received')){d.pay.push({d:today(),a:v,m:'Cash'});lg(d,'Payment ₹'+n2(v)+' received (Cash, from Calendar)');fix(d);touch(d);rec=true}}
 x.ok=1;x.u=Date.now();sch();return rec}
 let remHide=false;
 function RB(){if(remHide)return'';const L=cdue();if(!L.length)return'';const t=today(),nt=L.filter(x=>x.d===t).length,od=L.length-nt;
@@ -474,17 +517,26 @@ if(D.nt){const p0=await notePerm();if(p0=='none'){alert('This device or browser 
 const p=p0=='denied'&&!LN()?'denied':await noteAsk();if(p=='granted'){fireNote('Notifications are on',{body:'You will be reminded on the day someone is due to pay.',icon:'icon-192.png'});await exactAsk();schedNote0();noteBg()}else alert(permTxt(p));cal()}}}
 
 /* ===== Expenses ===== */
-let xT='today',xF=today(),xTo=today(),xEd=null,xFm={};
+let xT='today',xF=today(),xTo=today(),xEd=null,xFm={},xM=today().slice(0,7),xTO=false;
 const XC=['Material','Transport','Fuel','Salary','Rent','Electricity','Food & Tea','Internet & Phone','Repairs','Other'],XM=['Cash','UPI','Bank','Card'],xAll=()=>S.set.exp.filter(x=>!x.del);
-function xRange(){const t=today(),y=t.slice(0,4),m=t.slice(5,7);if(xT=='today')return[t,t,'Today ('+dr(t)+')'];if(xT=='month')return[y+'-'+m+'-01',y+'-'+m+'-31',MN[+m-1]+' '+y];if(xT=='all')return['0000-01-01','9999-12-31','All dates'];
+/* expense titles (categories): you can rename, add and delete them. 'Other' always stays. */
+const xCats=()=>{const a=Array.isArray(S.set.xcat)&&S.set.xcat.length?S.set.xcat:XC;return a.includes('Other')?a:[...a,'Other']},xCatList=()=>[...new Set([...xCats(),...xAll().map(x=>x.c||'Other')])],xUsed=()=>{const u={};xAll().forEach(x=>{const c=x.c||'Other';u[c]=(u[c]||0)+1});return u};
+function xRen(a,b){b=String(b||'').trim().slice(0,40);if(!b||b===a)return false;const lc=b.toLowerCase(),ex=xCatList().find(c=>c!==a&&c.toLowerCase()===lc);
+if(ex&&!confirm('The title "'+ex+'" already exists. Move all "'+a+'" expenses into it?'))return false;
+const nw=ex||b,now=Date.now();S.set.exp.forEach(x=>{if(!x.del&&(x.c||'Other')===a){x.c=nw;x.u=now}});S.set.xcat=[...new Set(xCatList().map(c=>c===a?nw:c))];sch();return true}
+function xDelCat(c){const n=xUsed()[c]||0;if(!confirm('Delete the title "'+c+'"?'+(n?'\n\n'+n+' expense'+(n>1?'s':'')+' with this title will be moved to "Other".':'')))return false;
+const now=Date.now();S.set.exp.forEach(x=>{if(!x.del&&(x.c||'Other')===c){x.c='Other';x.u=now}});S.set.xcat=xCatList().filter(v=>v!==c);sch();return true}
+function xAddCat(v){v=String(v||'').trim().slice(0,40);if(!v)return false;if(xCatList().some(c=>c.toLowerCase()===v.toLowerCase())){alert('That title already exists.');return false}S.set.xcat=[...xCatList().filter(c=>c!=='Other'),v,'Other'];sch();return true}
+function xtitles(){const u=xUsed();return `<details class="card xtl" id="xtl"${xTO?' open':''}><summary>Edit expense titles</summary><p class="hint">Type a new name in a box and press Enter (or click outside it). Every past expense with that title is renamed too. Deleting a title moves its expenses to "Other".</p>${xCatList().map(c=>`<div class="xtr"><input data-xcr="${e(c)}" value="${e(c)}" maxlength="40" aria-label="Title name"${c=='Other'?' readonly':''}><small>${u[c]||0} used</small>${c=='Other'?'<span></span>':`<button class="ghost sm" data-xcd="${e(c)}" aria-label="Delete title ${e(c)}">✕</button>`}</div>`).join('')}<div class="xtr add"><input id="xcn" maxlength="40" placeholder="New title, e.g. Packing" aria-label="New title"><span></span><button data-xca="1">Add title</button></div></details>`}
+function xRange(){const t=today(),y=t.slice(0,4),m=t.slice(5,7);if(xT=='today')return[t,t,'Today ('+dr(t)+')'];if(xT=='month')return[y+'-'+m+'-01',y+'-'+m+'-31',MN[+m-1]+' '+y];if(xT=='mon'&&/^\d{4}-\d{2}$/.test(xM))return[xM+'-01',xM+'-31',MY(xM)];if(xT=='all')return['0000-01-01','9999-12-31','All dates'];
 let a=dOk(xF)?xF:t,b=dOk(xTo)?xTo:t;if(a>b)[a,b]=[b,a];return[a,b,a==b?dr(a):dr(a)+' to '+dr(b)]}
 const xList=()=>{const[a,b]=xRange();return xAll().filter(x=>x.d>=a&&x.d<=b).sort((p,q)=>p.d<q.d?1:p.d>q.d?-1:q.u-p.u)};
-function expPaper(L,lab){const s=S.set,C=s.colors||DC,hd=hx(C.hd,DC.hd),ac=hx(C.ac,DC.ac),th=hx(C.th,DC.th),tt=hx(C.tt,DC.tt),logo=(lumOf(hd)>.6?window.ZX_LOGO_D:window.ZX_LOGO)||'',T=L.reduce((a,x)=>a+x.a,0),cs={};L.forEach(x=>{const c=x.c||'Other';cs[c]=(cs[c]||0)+x.a});
+function expPaper(L,lab){const s=S.set,C=s.colors||DC,hd=hx(C.hd,DC.hd),ac=hx(C.ac,DC.ac),th=hx(C.th,DC.th),tt=hx(C.tt,DC.tt),logo=(lumOf(hd)>.6?window.ZX_LOGO_D:window.ZX_LOGO)||'',T=L.reduce((a,x)=>a+x.a,0),cs={};L.forEach(x=>{const c=x.c||'Other';cs[c]=(cs[c]||0)+x.a});const ms={};L.forEach(x=>{const k=x.d.slice(0,7),m=ms[k]=ms[k]||{n:0,a:0};m.n++;m.a+=x.a});const mk=Object.keys(ms).sort(),msum=mk.length>1?`<h4>Month-wise summary</h4><table class="pq"><thead><tr><th>Month<th class="r">Entries<th class="r">Spent</tr></thead><tbody>${mk.map(k=>`<tr><td>${e(MY(k))}<td class="r">${ms[k].n}<td class="r nw">₹ ${n2(ms[k].a)}</tr>`).join('')}</tbody></table>`:'';
 return `<div class="zp${s.bw?' bw':''}" style="--hd:${hd};--ac:${ac};--th:${th};--tt:${tt};--hf:${fgOf(hd)};--thf:${fgOf(th)};--ttf:${fgOf(tt)}"><style>${PCSS}</style>
 <div class="ph"><img class="plogo" src="${logo}" alt="${e(s.name)}"><div class="pco"><b>${e(s.name)}</b><div class="pl">${e(s.addr)}</div>Phone : ${e(s.phone)}<br>${e(s.email)}</div></div><div class="pac"></div>
 <div class="pbody"><h3 class="ptt">Expense Report</h3><div class="pinfo"><div class="pbt"><small>PERIOD</small><b>${e(lab)}</b></div><div class="pmeta"><div><span>Entries</span><b>${L.length}</b></div><div><span>Total spent</span><b>₹ ${n2(T)}</b></div></div></div>
 <table class="pq"><thead><tr><th>#<th>Date<th>Category<th>Description<th>Mode<th class="r">Amount</tr></thead><tbody>${L.map((x,k)=>`<tr><td>${k+1}<td class="nw">${dm(x.d)}<td>${e(x.c)}<td>${e(x.n)}<td>${e(x.m)}<td class="r nw">₹ ${n2(x.a)}</tr>`).join('')}</tbody></table>
-<div class="pbot"><div class="pw2"><b>By category</b>${Object.keys(cs).sort((a,b)=>cs[b]-cs[a]).map(c=>`<p>${e(c)} : ₹ ${n2(cs[c])}</p>`).join('')}</div><div class="ptot"><div class="gr">Total<span>₹ ${n2(T)}</span></div></div></div></div>
+${msum}<div class="pbot"><div class="pw2"><b>By category</b>${Object.keys(cs).sort((a,b)=>cs[b]-cs[a]).map(c=>`<p>${e(c)} : ₹ ${n2(cs[c])}</p>`).join('')}</div><div class="ptot"><div class="gr">Total<span>₹ ${n2(T)}</span></div></div></div></div>
 <div class="pft">Generated on ${dr(today())}</div></div>`}
 function expText(L,lab){const T=L.reduce((a,x)=>a+x.a,0),cs={};L.forEach(x=>{const c=x.c||'Other';cs[c]=(cs[c]||0)+x.a});
 return [S.set.name+' - Expenses','Period: '+lab,'',...L.map(x=>dr(x.d)+' | '+(x.c||'Other')+' | '+(x.n||'-')+' | '+(x.m||'-')+' | ₹ '+n2(x.a)),'','By category:',...Object.keys(cs).sort((a,b)=>cs[b]-cs[a]).map(c=>'  '+c+': ₹ '+n2(cs[c])),'','Total: ₹ '+n2(T)+' ('+L.length+' entries)'].join('\n')+'\n'}
@@ -492,35 +544,45 @@ async function xExport(k,b){const L=xList().slice().sort((p,q)=>p.d<q.d?-1:p.d>q
 const base='Expenses-'+lab.replace(/[^\w]+/g,'-').replace(/^-|-$/g,''),html=expPaper(L,lab);b.disabled=true;
 try{if(k=='txt')await saveFile(base+'.txt',new Blob([expText(L,lab)],{type:'text/plain;charset=utf-8'}),'text/plain','Expenses '+lab);
 else if(k=='pdf'){const P=await renderPdf(html,'Expenses '+lab);await saveFile(base+'.pdf',P.output('blob'),'application/pdf','Expenses '+lab)}
-else if(k=='img')await saveFile(base+'.png',await renderImg(html),'image/png','Expenses '+lab);
-else if(k=='prn'){if(isNat()){const P=await renderPdf(html,'Expenses '+lab);await saveFile(base+'.pdf',P.output('blob'),'application/pdf','Expenses '+lab,true)}else pj(html)}}
+else if(k=='img')await saveFile(base+'.png',await renderImg(html),'image/png','Expenses '+lab);}
 catch(x){console.warn(x);if(!x||x.name!='AbortError')alert('Could not create the file. Please try again.')}finally{b.disabled=false}}
 // Remember what is typed in the form, only when the page is redrawn for another reason (tab, date range, delete).
 const xSnap=()=>{if($('#xa'))xFm={d:$('#xd').value,c:$('#xc').value,n:$('#xn').value,a:$('#xa').value,m:$('#xm').value}};
-function expn(){
-const L=xList(),TT=L.reduce((a,x)=>a+x.a,0),T=today(),td=xAll().filter(x=>x.d==T).reduce((a,x)=>a+x.a,0),mo=xAll().filter(x=>x.d.startsWith(T.slice(0,7))).reduce((a,x)=>a+x.a,0),lab=xRange()[2],cats=[...new Set([...XC,...xAll().map(x=>x.c).filter(Boolean)])],cs={};L.forEach(x=>{const c=x.c||'Other';cs[c]=(cs[c]||0)+x.a});
-const f=xFm,fd=dOk(f.d)?f.d:T,TABS=[['today','Today'],['month','This month'],['all','All'],['range','Pick dates']];
+const xSorted=()=>xList().slice().sort((p,q)=>p.d<q.d?-1:p.d>q.d?1:p.u-q.u);
+function expPv(){const T=today(),o0={xT,xM,xF,xTo},mo=monthsOf([...xAll().map(x=>x.d),T]);let mv,first=null;
+if(xT=='mon')mv=xM;else if(xT=='month')mv=T.slice(0,7);else if(xT=='all')mv='';else{mv='*';first=['*','As on screen: '+xRange()[2]]}
+if(mv&&mv!='*'&&!mo.includes(mv)){mo.push(mv);mo.sort().reverse()}
+pvOpen({title:'Expense report',file:()=>'Expenses-'+xRange()[2].replace(/[^\w]+/g,'-').replace(/^-|-$/g,''),months:mo,month:mv,first,onMonth:v=>{if(v=='*'){xT=o0.xT;xM=o0.xM;xF=o0.xF;xTo=o0.xTo}else if(v===''){xT='all'}else{xT='mon';xM=v}},onClose:()=>{if(location.hash=='#/x')expn()},build:()=>{const L=xSorted();return L.length?expPaper(L,xRange()[2]):''}})}
+function expn(){const xd0=$('#xtl');xTO=xd0?xd0.open:false;
+const L=xList(),TT=L.reduce((a,x)=>a+x.a,0),T=today(),td=xAll().filter(x=>x.d==T).reduce((a,x)=>a+x.a,0),mo=xAll().filter(x=>x.d.startsWith(T.slice(0,7))).reduce((a,x)=>a+x.a,0),lab=xRange()[2],cats=xCatList(),cs={};L.forEach(x=>{const c=x.c||'Other';cs[c]=(cs[c]||0)+x.a});
+const f=xFm,fd=dOk(f.d)?f.d:T,TABS=[['today','Today'],['month','This month'],['mon','Pick month'],['all','All'],['range','Pick dates']],MO=monthsOf([...xAll().map(x=>x.d),T,xM+'-01']);
 app.innerHTML=RB()+`<div class="state"><h1>Expenses</h1><div class="act"><button class="ghost" data-xe="pdf">PDF</button><button class="ghost" data-xe="img">Image</button><button class="ghost" data-xe="txt">Text</button><button data-xe="prn">Print</button></div></div>
 <div class="stats"><div class="hero"><small>${e(lab)}</small><b>₹ ${n2(TT)}</b></div><div><small>Spent today</small><b>₹ ${n2(td)}</b></div><div><small>Spent this month</small><b>₹ ${n2(mo)}</b></div></div>
 <div class="card"><h2>${xEd?'Edit expense':'Add expense'}</h2><datalist id="xcl">${cats.map(c=>`<option value="${e(c)}">`).join('')}</datalist><div class="cg"><div><label>Date<input id="xd" type="date" value="${e(fd)}"></label></div><div><label>Category<input id="xc" list="xcl" autocomplete="off" value="${e(f.c||'')}" placeholder="e.g. Fuel"></label></div><div class="s2"><label>What was it for<input id="xn" value="${e(f.n||'')}" placeholder="e.g. Petrol for the van"></label></div><div><label>Amount (₹)<input id="xa" type="number" min="0" step="any" inputmode="decimal" value="${e(f.a||'')}"></label></div><div><label>Paid by<select id="xm">${XM.map(m=>`<option${m==(f.m||'Cash')?' selected':''}>${m}`).join('')}</select></label></div></div>
 <div class="act" style="margin-top:12px"><button data-xa="add">${xEd?'Update expense':'Add expense'}</button>${xEd?'<button class="ghost" data-xa="cancel">Cancel</button>':''}</div></div>
+${xtitles()}
 <div class="bar tabs">${TABS.map(t=>`<button class="${xT==t[0]?'on':''}" data-xt="${t[0]}">${t[1]}</button>`).join('')}</div>
+${xT=='mon'?`<div class="bar finder" style="grid-template-columns:1fr"><label>Month<select id="xmo" aria-label="Month">${MO.map(m=>`<option value="${e(m)}"${m===xM?' selected':''}>${e(MY(m))}</option>`).join('')}</select></label></div>`:''}
 ${xT=='range'?`<div class="bar finder" style="grid-template-columns:1fr 1fr"><label>From<input type="date" id="xf" value="${e(xF)}"></label><label>To<input type="date" id="xto" value="${e(xTo)}"></label></div>`:''}
 ${L.length?`<div class="sw"><table class="lt"><tr><th>Date<th>Category<th>Description<th>Paid by<th class="r">Amount<th></tr>${L.map(x=>`<tr><td>${dm(x.d)}<td>${e(x.c)||'-'}<td class="wr">${e(x.n)||'-'}<td>${e(x.m)}<td class="r">₹ ${n2(x.a)}<td class="nw"><button class="ghost sm" data-xed="${e(x.id)}">Edit</button> <button class="ghost sm" data-xdel="${e(x.id)}" aria-label="Delete expense">✕</button></tr>`).join('')}</table></div>
 <div class="tt" style="margin-top:14px"><div class="gr">Total spent<span>₹ ${n2(TT)}</span></div></div><div class="xcat">${Object.keys(cs).sort((a,b)=>cs[b]-cs[a]).map(c=>`<span class="chip">${e(c)} ₹ ${n2(cs[c])}</span>`).join('')}</div>`:'<div class="empty">No expenses for this period. Add one above.</div>'}`;
 app.onfocusout=null;
 const sv1=()=>{const a=+$('#xa').value,d=$('#xd').value;if(!dOk(d)){alert('Pick the date.');return}if(!(a>0)||!isFinite(a)||a>=1e10){alert('Enter the amount spent.');return}
-const o=okExp({id:xEd||uid(),d,c:$('#xc').value.trim()||'Other',n:$('#xn').value.trim(),a:r2(a),m:$('#xm').value,u:Date.now()}),i=S.set.exp.findIndex(x=>x.id==xEd);if(i>=0)S.set.exp[i]=o;else S.set.exp.push(o);
-xEd=null;xFm={d:d,m:o.m};sch();expn();const n=$('#xn');n&&n.focus()};
+const c0=$('#xc').value.trim(),o=okExp({id:xEd||uid(),d,c:xCatList().find(c=>c.toLowerCase()===c0.toLowerCase())||c0||'Other',n:$('#xn').value.trim(),a:r2(a),m:$('#xm').value,u:Date.now()}),i=S.set.exp.findIndex(x=>x.id==xEd);if(i>=0)S.set.exp[i]=o;else S.set.exp.push(o);
+xEd=null;xFm={d:d,m:o.m};sch();const vis=xList().some(x=>x.id==o.id);expn();if(!vis)toast('Saved on '+dr(d)+'. It is outside the dates shown, choose All to see it.');const n=$('#xn');n&&n.focus()};
 app.oninput=null;
-app.onchange=ev=>{const t=ev.target;if(t.id=='xf'||t.id=='xto'){xSnap();xF=$('#xf').value;xTo=$('#xto').value;expn()}};
-app.onkeydown=ev=>{if(ev.key=='Enter'&&['xd','xc','xn','xa'].includes(ev.target.id)){ev.preventDefault();sv1()}};
-app.onclick=ev=>{const b=ev.target.closest('[data-xa],[data-xt],[data-xe],[data-xed],[data-xdel]');if(!b)return;const D=b.dataset;
+app.onchange=ev=>{const t=ev.target;if(t.id=='xf'||t.id=='xto'){xSnap();xF=$('#xf').value;xTo=$('#xto').value;expn()}else if(t.id=='xmo'){xSnap();xM=t.value;expn()}else if(t.dataset.xcr!==undefined){xSnap();xTO=true;if(xRen(t.dataset.xcr,t.value))expn();else t.value=t.dataset.xcr}};
+app.onkeydown=ev=>{if(ev.key!='Enter')return;const t=ev.target;if(['xd','xc','xn','xa'].includes(t.id)){ev.preventDefault();sv1()}else if(t.dataset.xcr!==undefined){ev.preventDefault();t.blur()}else if(t.id=='xcn'){ev.preventDefault();xSnap();xTO=true;if(xAddCat(t.value))expn()}};
+app.onclick=ev=>{const b=ev.target.closest('[data-xa],[data-xt],[data-xe],[data-xed],[data-xdel],[data-xcd],[data-xca]');if(!b)return;const D=b.dataset;
 if(D.xt){xSnap();xT=D.xt;expn();return}if(D.xa=='add'){sv1();return}if(D.xa=='cancel'){xEd=null;xFm={};expn();return}
 if(D.xed){const x=S.set.exp.find(y=>y.id==D.xed);if(x){xEd=x.id;xFm={d:x.d,c:x.c,n:x.n,a:x.a,m:x.m};expn();scrollTo(0,0)}return}
 if(D.xdel){if(confirm('Delete this expense?')){const x=S.set.exp.find(y=>y.id==D.xdel);if(x){x.del=1;x.u=Date.now();xSnap();if(xEd==x.id){xEd=null;xFm={}}sch();expn()}}return}
-if(D.xe)xExport(D.xe,b)}}
+if(D.xcd){xSnap();xTO=true;if(xDelCat(D.xcd))expn();return}
+if(D.xca){xSnap();xTO=true;if(xAddCat($('#xcn').value))expn();return}
+if(D.xe=='prn'){expPv();return}if(D.xe)xExport(D.xe,b)}}
 
+window.zxPrintPage=()=>{if($('#zxl'))return;const h=location.hash;if(h=='#/h'){histPv();return}if(h=='#/x'){expPv();return}const d=h.startsWith('#/d/')&&S.docs.find(x=>x.id==h.slice(4)&&!x.del);if(d){billPv(d);return}toast(h==''||h=='#/'?'Save the bill first, then press Print on it.':'Open a bill, History or Expenses to print.')};
+document.addEventListener('keydown',ev=>{if((ev.ctrlKey||ev.metaKey)&&!ev.altKey&&!ev.shiftKey&&String(ev.key).toLowerCase()=='p'){ev.preventDefault();window.zxPrintPage()}});
 function route(){const h=location.hash;scrollTo(0,0);acHide();
 if(h=='#/h')hist();else if(h=='#/c')cal();else if(h=='#/x')expn();else if(h=='#/s')sets();else if(h.startsWith('#/d/')&&S.docs.find(x=>x.id==h.slice(4)&&!x.del))bill(S.docs.find(x=>x.id==h.slice(4)&&!x.del));else bill(null)
 const on=['#/s','#/h','#/c','#/x'].includes(h)?h:h.startsWith('#/d/')?'#/h':'#/';document.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('on',a.getAttribute('href')==on))}
