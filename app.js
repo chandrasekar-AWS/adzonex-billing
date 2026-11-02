@@ -23,7 +23,7 @@ if(Array.isArray(v.cal))o.cal=ob2(v.cal).map(okCal).filter(Boolean);
 if(Array.isArray(v.exp))o.exp=ob2(v.exp).map(okExp).filter(Boolean);
 return o}
 const okDoc=r=>{if(!r||typeof r!='object'||typeof r.id!='string'||!/^[\w-]{1,64}$/.test(r.id))return null;
-const o={id:r.id,u:+r.u||0};['estNo','billNo','cust','phone','email','addr','cgst','pos','disc'].forEach(k=>o[k]=sx(r[k],k=='addr'?600:200));o.terms=sx(r.terms,3000);o.rem=sx(r.rem,1000);
+const o={id:r.id,u:+r.u||0};['estNo','billNo','cust','phone','email','addr','cgst','pos','disc'].forEach(k=>o[k]=sx(r[k],k=='addr'?600:200));o.terms=sx(r.terms,3000);o.rem=sx(r.rem,1000);o.by=sx(r.by,64);
 o.date=dOk(r.date)?r.date:tdy();o.hsn=r.hsn!==false;o.igst=!!r.igst;o.gst=!!r.gst;o.rate=r.rate===''||r.rate==null||!isFinite(+r.rate)?18:+r.rate;
 o.pfx=r.pfx==='INV'?'INV':r.pfx?'BIL':undefined;if(r.del)o.del=1;if(r.bl)o.bl=1;
 o.sig=typeof r.sig=='string'&&r.sig.length<900000&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+\/=]+$/.test(r.sig)?r.sig:'';
@@ -40,7 +40,7 @@ const save=()=>{try{localStorage.setItem(K,JSON.stringify(S))}catch{alert('Could
 const SB_URL='https://krfjrasoihxhxnjskrhi.supabase.co',SB_KEY='sb_publishable_E9aUji5CGt6_MPWWzfMJbw_tw8NXJ1s';
 const sb=!FRAMED&&window.supabase?supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}}):null;
 let SES=null;
-const cloud=()=>!!(sb&&SES),mailOk=()=>!!(cloud()&&okUrl(S.set.url));
+const isBiller=()=>S.role==='biller',mineDoc=id=>S.docs.find(x=>x.id==id&&!x.del&&x.by&&SES&&x.by===SES.user.id),cloud=()=>!!(sb&&SES),mailOk=()=>!!(cloud()&&okUrl(S.set.url));
 const okUrl=u=>/^https:\/\/script\.google\.com\/(?:a\/macros\/[\w.-]+\/|a\/[\w.-]+\/macros\/|macros\/)s\/[\w-]+\/exec$/.test(u||''),EMRE=/^[^\s@,;<>"()\[\]\\]+@[^\s@,;<>"()\[\]\\]+\.[^\s@,;<>"()\[\]\\]+$/;
 function st(t,c,m){SYNCINFO=m||'';const b=$('#sync');if(b){b.textContent=t;b.className='sync '+(c||'');b.title=m||'';if(m){b.setAttribute('role','button');b.tabIndex=0}else{b.removeAttribute('role');b.removeAttribute('tabindex')}}}
 document.addEventListener('click',e=>{if(SYNCINFO&&e.target.closest&&e.target.closest('#sync'))alert(SYNCINFO)});document.addEventListener('keydown',e=>{if(SYNCINFO&&e.key==='Enter'&&e.target.id==='sync')alert(SYNCINFO)});
@@ -72,13 +72,14 @@ if(a=='pushset'){const r=ck(await sb.from('app_settings').select('updated').mayb
 throw new Error('Unknown action')}
 const pend=new Set();let tm;
 function touch(d){if(!S.docs.includes(d))return;d.u=Date.now();save();pend.add(d.id);clearTimeout(tm);tm=setTimeout(push,800)}
-function commit(d){if(!S.docs.includes(d)){d.estNo=d.estNo||mkNo(d.date);lg(d,'Estimate '+d.estNo+' saved');S.docs.unshift(d)}touch(d)}
+function commit(d){if(!S.docs.includes(d)){d.estNo=d.estNo||mkNo(d.date);d.by=(SES&&SES.user&&SES.user.id)||d.by||'';lg(d,'Estimate '+d.estNo+' saved');S.docs.unshift(d)}touch(d)}
 const SH=['name','addr','gst','phone','email','bank','acc','ifsc','holder','payto','terms','copy','auto','services','svv','logo','ne','nb','bw','colors','cal','exp','xcat'];
 const sch=()=>{S.set.su=Date.now();S.pset=1;save();clearTimeout(tm);tm=setTimeout(push,800);schedNote()};
-async function push(){if(!cloud())return;const ids=[...pend];try{st('Saving…');pend.clear();if(ids.length)await api('push',{docs:S.docs.filter(d=>ids.includes(d.id))});if(S.pset){await api('pushset',{set:{u:S.set.su,v:Object.fromEntries(SH.map(k=>[k,S.set[k]]))}});S.pset=0;save()}LEGACY?st('Synced (not shared)','ok','Your Supabase database is still the older private version, so bills are NOT shared between logins.\n\nTo share them: Supabase > SQL Editor > paste everything from backend/supabase.sql > Run. Your bills are kept.'):st('Synced','ok')}catch(x){console.warn('push',x);ids.forEach(i=>pend.add(i));syncFail(x,true);clearTimeout(tm);tm=setTimeout(push,15000)}}
+async function push(){if(!cloud())return;const ids=[...pend];try{st('Saving…');pend.clear();if(ids.length)await api('push',{docs:S.docs.filter(d=>ids.includes(d.id))});if(S.pset&&isBiller()){S.pset=0;save()}else if(S.pset){await api('pushset',{set:{u:S.set.su,v:Object.fromEntries(SH.map(k=>[k,S.set[k]]))}});S.pset=0;save()}LEGACY?st('Synced (not shared)','ok','Your Supabase database is still the older private version, so bills are NOT shared between logins.\n\nTo share them: Supabase > SQL Editor > paste everything from backend/supabase.sql > Run. Your bills are kept.'):st('Synced','ok')}catch(x){console.warn('push',x);ids.forEach(i=>pend.add(i));syncFail(x,true);clearTimeout(tm);tm=setTimeout(push,15000)}}
 let PULLING=null,LASTPULL=0;function pull(){if(PULLING)return PULLING;return PULLING=pull0().finally(()=>{PULLING=null;LASTPULL=Date.now()})}
 async function pull0(){if(!cloud())return;try{st('Syncing…');if(SCHEMA===null){const t=await sb.rpc('is_team_member');if(t.error){if(authErr(mk(t))){const e=mk(t);throw e}if(t.error.code==='PGRST202'||t.error.code==='42883'||/Could not find the function/i.test(t.error.message||'')){SCHEMA='old';LEGACY=true}}else{SCHEMA='new';MEMBER=t.data===true}}
 if(SCHEMA==='new'&&MEMBER===false){const[sh,lg]=explain({code:'42501',message:'row-level security'});st(sh+' - click for help','bad',lg);return}
+if(SCHEMA==='new'){const rr=await sb.rpc('my_role');if(!rr.error&&(rr.data==='biller'||rr.data==='admin')&&S.role!==rr.data){S.role=rr.data;save();roleUi();route()}}
 const j=await api('pull'),rd=j.docs.map(okDoc).filter(Boolean);
 rd.forEach(r=>{const l=S.docs.find(d=>d.id==r.id);if(!l)S.docs.push(r);else if(r.u>l.u)Object.assign(l,r)});
 const rm=new Map(rd.map(r=>[r.id,r.u]));S.docs.forEach(d=>{if(!rm.has(d.id)||d.u>rm.get(d.id))pend.add(d.id)});
@@ -149,12 +150,28 @@ esc=ev=>{if(ev.key=='Escape'){ev.preventDefault();close()}};
 w.addEventListener('keydown',ev=>{if(ev.key!='Tab')return;const f=[...w.querySelectorAll('button:not([disabled]),select')],a=f[0],z=f[f.length-1];if(!a)return;if(ev.shiftKey&&document.activeElement===a){ev.preventDefault();z.focus()}else if(!ev.shiftKey&&document.activeElement===z){ev.preventDefault();a.focus()}});
 w.addEventListener('click',async ev=>{const b=ev.target.closest('[data-pv]');if(!b||b.disabled)return;const a=b.dataset.pv;if(a=='x'){close();return}if(!html)return;
 const fn=(typeof o.file=='function'?o.file():o.file||'Document').replace(/[\/\\]/g,'-')+'.pdf';bP.disabled=bF.disabled=true;
-try{if(a=='print'){if(o.onPrint)o.onPrint();if(isNat()){const P=await renderPdf(html,o.title);await saveFile(fn,P.output('blob'),'application/pdf',o.title,true)}else pj(html)}
+try{if(a=='print'){if(o.onPrint)o.onPrint();if(isNat()){const P=await renderPdf(html,o.title);await saveFile(fn,P.output('blob'),'application/pdf',o.title,true)}else if(window.zxDesktop)await pjDesk(html);else pj(html)}
 else{if(o.onPdf)o.onPdf();const P=await renderPdf(html,o.title);await saveFile(fn,P.output('blob'),'application/pdf',o.title)}}
 catch(x){console.warn(x);if(!x||x.name!='AbortError')alert(a=='print'?'Could not print. Please try again.':'Could not create the PDF. Please try again.')}
 finally{bP.disabled=bF.disabled=!html}});
 w.addEventListener('change',ev=>{const t=ev.target;if(t.dataset.pm===undefined)return;o.month=t.value;if(o.onMonth)o.onMonth(t.value);draw()});
 addEventListener('resize',fit);document.addEventListener('keydown',esc);draw();bP.focus()}
+/* Windows / Mac / Linux app: our own print panel (printer, copies, colour). The job is always A4 portrait. */
+function pjDesk(html){return new Promise(async done=>{let pr=[];try{pr=await zxDesktop.printers()}catch{}
+let last='';try{last=localStorage.getItem('zx-printer')||''}catch{}const pick=pr.find(p=>p.name===last)||pr.find(p=>p.isDefault)||pr[0],from=document.activeElement,o=document.createElement('div');o.className='mdl pp';
+o.innerHTML=`<div class="mdc" role="dialog" aria-modal="true" aria-label="Print"><h2>Print</h2>${pr.length?`<label>Printer<select id="ppn">${pr.map(p=>`<option value="${e(p.name)}"${pick&&p.name===pick.name?' selected':''}>${e(p.display)}${p.isDefault?' (default)':''}</option>`).join('')}</select></label>`:'<p class="hint">No printer was found on this computer. Use "Windows print window" below, or Save PDF.</p>'}
+<div class="cg" style="margin-top:12px"><div><label>Copies<input id="ppc" type="number" min="1" max="99" value="1"></label></div><div><label>Colour<select id="ppk"><option value="1">Colour</option><option value="0">Black &amp; white</option></select></label></div></div>
+<p class="hint">Paper: A4, portrait (the invoice always prints upright).</p><p class="hint" id="pps" role="status"></p><div class="act"><button id="ppg"${pr.length?'':' disabled'}>Print</button><button class="ghost" id="pph">Windows print window</button><button class="ghost" id="ppx">Cancel</button></div></div>`;
+document.body.append(o);const bs=[...o.querySelectorAll('button')],st=o.querySelector('#pps'),g=o.querySelector('#ppg')||o.querySelector('#ppx');g.focus();
+const esc=ev=>{if(ev.key=='Escape'){ev.stopPropagation();ev.preventDefault();close(false)}},close=ok=>{document.removeEventListener('keydown',esc,true);o.remove();try{from&&from.isConnected&&from.focus()}catch{}done(ok)};document.addEventListener('keydown',esc,true);
+const send=async sys=>{bs.forEach(b=>b.disabled=true);st.textContent=sys?'Opening the Windows print window…':'Sending to the printer…';
+document.querySelectorAll('.pw').forEach(x=>x.remove());const w=document.createElement('div');w.className='pw';w.innerHTML=html;document.body.append(w);document.body.classList.add('pj');let r;
+try{await Promise.all([...w.querySelectorAll('img')].map(i=>i.decode?i.decode().catch(()=>{}):0));const n=o.querySelector('#ppn'),dn=n?n.value:'';if(n&&!sys){try{localStorage.setItem('zx-printer',dn)}catch{}}
+r=await zxDesktop.print({deviceName:dn,copies:Math.min(99,Math.max(1,Math.floor(+o.querySelector('#ppc').value)||1)),color:o.querySelector('#ppk').value!=='0',system:sys})}catch(x){r={ok:false,why:String(x&&x.message||x)}}
+finally{w.remove();document.body.classList.remove('pj')}
+bs.forEach(b=>b.disabled=!pr.length&&b.id=='ppg');if(r.ok){close(true);toast(sys?'Print job sent':'Sent to the printer')}else st.textContent=r.why&&!/cancel/i.test(r.why)?'Could not print: '+r.why:'Print cancelled.'};
+o.addEventListener('click',ev=>{const b=ev.target.closest('button');if(!b||b.disabled)return;if(b.id=='ppg')send(false);else if(b.id=='pph')send(true);else if(b.id=='ppx')close(false)});
+o.addEventListener('mousedown',ev=>{if(ev.target===o)close(false)})})}
 function billPv(d){const T=isBill(d)?'Invoice':'Estimate';pvOpen({title:T+' '+no(d),file:()=>T+'-'+(no(d)||'draft'),build:()=>paper(d),onPrint:()=>{lg(d,'Printed');touch(d)},onPdf:()=>{lg(d,'PDF downloaded');touch(d)},onClose:()=>{if(location.hash=='#/d/'+d.id&&S.docs.includes(d))bill(d)}})}
 const e=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const n2=x=>(+x||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -275,8 +292,8 @@ const H=()=>md=='dm'?['#','Service','Details','Months','Monthly fee','Amount',''
 const sheet=()=>`<div class="xs ${md}${md=='pr'&&!hs()?' nh':''}"><div class="xr xh">${H().map(h=>`<div class="xc">${h}</div>`).join('')}</div><div id="rows">${rowsH(gk())}</div><div class="xr xt" id="trow">${trow()}</div></div>`;
 const head=()=>{const[st,c]=stat(d);return `<div><h1>${sv()?e(no(d)):'New estimate'}</h1><span class="chip ${c}">${st}</span> <small>${isBill(d)?'Paid ₹ '+n2(pd(d))+' of ₹ '+n2(tot(d)):sv()?'No payment yet':'Not saved yet'}</small></div>`};
 const bAct=isBill(d)?ib('print','Print','print')+ib('pdf','Download PDF','pdf')+ib('mail','Email copy','mail')+ib('wa','Send on WhatsApp','wa'):sv()?ib('print','Print','print')+ib('pdf','Download estimate PDF','pdf'):'';
-const acts=(sv()?`<label class="swt sm"><input type="checkbox" role="switch" data-s="bw" ${S.set.bw?'checked':''}><span class="trk"><span class="knob"></span></span><span class="swl">Black &amp; white</span></label>`:'')+bAct;
-const pays=()=>d.pay.map((x,k)=>`<div class="pay"><div>${dm(x.d)}</div><div>₹ ${n2(x.a)}</div><div>${e(x.m)}</div><button class="ghost" data-a="dp" data-i="${k}" aria-label="Remove payment">✕</button></div>`).join('');
+const acts=(sv()&&!isBiller()?`<label class="swt sm"><input type="checkbox" role="switch" data-s="bw" ${S.set.bw?'checked':''}><span class="trk"><span class="knob"></span></span><span class="swl">Black &amp; white</span></label>`:'')+bAct;
+const pays=()=>d.pay.map((x,k)=>`<div class="pay"><div>${dm(x.d)}</div><div>₹ ${n2(x.a)}</div><div>${e(x.m)}</div>${isBiller()?'':`<button class="ghost" data-a="dp" data-i="${k}" aria-label="Remove payment">✕</button>`}</div>`).join('');
 const gdet=()=>d.gst?`<div>Taxable Amount<span>₹ ${n2(txb(d))}</span></div>`+(d.igst?`<div>IGST @ ${n2(rt(d))}%<span>₹ ${n2(ig(d))}</span></div>`:`<div>CGST @ ${n2(rt(d)/2)}%<span>₹ ${n2(cg(d))}</span></div><div>SGST @ ${n2(rt(d)/2)}%<span>₹ ${n2(sg2(d))}</span></div>`):'';
 const sigH=()=>`<div class="sigb">${d.sig?`<img src="${e(d.sig)}" alt="Signature" class="sigp">`:'<span class="hint">No signature added. The printed invoice keeps an empty space for signing by hand.</span>'}<label class="btn ghost up">${d.sig?'Change signature':'Upload signature'}<input type="file" accept="image/*" id="sigf" hidden></label>${d.sig?'<button class="ghost" data-a="sigdel">Remove</button>':''}</div>`;
 app.innerHTML=`${RB()}<div class="state" id="head">${head()}<div class="act">${acts}</div></div>
@@ -289,7 +306,7 @@ ${sv()?`<div class="card"><h2>Payments</h2><p style="margin:0;color:var(--mut)">
 <div class="card"><h2>Terms</h2><textarea data-k="terms">${e(d.terms)}</textarea></div>
 ${sv()?`<div class="card"><h2>Signature</h2><p style="margin:0 0 10px;color:var(--mut)">Upload a photo or scan of the signature for this ${TT().toLowerCase()} only. It prints above "Authorized Signatory". Every ${TT().toLowerCase()} has its own signature.</p><div id="sigbox">${sigH()}</div></div>`:''}
 ${(d.log||[]).length?`<div class="card"><h2>History of this ${TT().toLowerCase()}</h2>${d.log.slice().reverse().map(x=>`<div class="lg"><b>${new Date(x.t).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'})}</b><span>${e(x.e)}</span></div>`).join('')}</div>`:''}
-<div class="act" style="margin-bottom:20px">${sv()?'<button class="danger" data-a="rm">Delete</button>':'<button class="ghost" data-a="clr">Clear</button>'}<button data-a="save">Save</button></div>`;
+<div class="act" style="margin-bottom:20px">${sv()?(isBiller()?'':'<button class="danger" data-a="rm">Delete</button>'):'<button class="ghost" data-a="clr">Clear</button>'}<button data-a="save">Save</button></div>`;
 const upd=()=>{fix(d);touch(d);$('#v-w').textContent=words(tot(d));$('#v-s').textContent='₹ '+n2(sub(d));$('#v-d').textContent='- ₹ '+n2(dsc(d));$('#gdet').innerHTML=gdet();$('#gh').hidden=!(d.gst&&!S.set.gst);$('#v-t').textContent='₹ '+n2(tot(d));$('#trow').innerHTML=trow();$('#wl').textContent=TT()+' Amount In Words';$('#head').firstElementChild.outerHTML=head()};
 const rowUpd=(g,i)=>{const r=d[g][i],o=document.querySelector(`[data-amt="${g}:${i}"]`);if(o)o.textContent=at(g=='dm'?dma(r):amt(r));if(i==d[g].length-1&&done(g,r)){d[g].push(blank(g));$('#rows').insertAdjacentHTML('beforeend',rowH(g,i+1))}};
 const cellOf=(g,i,f)=>document.querySelector(`[data-g="${g}"][data-i="${i}"][data-k="${f}"]`);
@@ -302,17 +319,17 @@ if(x<ins.length-1){ins[x+1].focus();return}if(i==d[g].length-1){if(!String(d[g][
 const nx=cellOf(g,i+1,'n');nx&&nx.focus()};
 app.onclick=ev=>{const b=ev.target.closest('[data-a],[data-m]');if(!b)return;if(b.dataset.m){md=b.dataset.m;acHide();$('#sw').innerHTML=sheet();$('#hsnsw').hidden=md=='dm';$('#seg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.m==md));return}
 const a=b.dataset.a,i=+b.dataset.i,g=b.dataset.g;
-if(a=='save'){if(!String(d.cust||'').trim()){alert('Enter the client name first.');return}if(!['items','dm'].some(x=>d[x].some(r=>String(r.n||'').trim()))){alert('Add at least one service first.');return}if(!dOk(d.date))d.date=today();const nw=!sv();commit(d);if(nw)draft=null;flash=nw?'Estimate '+no(d)+' saved. Open it here to record the payment.':'Saved '+no(d);location.hash='#/h';return}
+if(a=='save'){if(!String(d.cust||'').trim()){alert('Enter the client name first.');return}if(!['items','dm'].some(x=>d[x].some(r=>String(r.n||'').trim()))){alert('Add at least one service first.');return}if(!dOk(d.date))d.date=today();const nw=!sv();commit(d);if(nw)draft=null;if(isBiller()){toast((nw?'Saved ':'Updated ')+no(d));if(nw)location.hash='#/d/'+d.id;return}flash=nw?'Estimate '+no(d)+' saved. Open it here to record the payment.':'Saved '+no(d);location.hash='#/h';return}
 if(a=='clr'){if(confirm('Clear everything on this page?')){draft=null;route()}return}
 if(a=='print'){billPv(d);return}
 if(a=='pdf'){b.disabled=true;lg(d,'PDF downloaded');touch(d);pdf(d).catch(x=>{console.warn(x);alert('Could not create the PDF. Please try again.')}).finally(()=>b.disabled=false);return}
 if(a=='wa'){waShare(d);return}
 if(a=='mail'){mail(d);return}
-if(a=='rm'){if(confirm('Delete '+no(d)+'? This cannot be undone.')){d.del=1;touch(d);location.hash='#/h'}return}
+if(a=='rm'){if(isBiller())return;if(confirm('Delete '+no(d)+'? This cannot be undone.')){d.del=1;touch(d);location.hash='#/h'}return}
 if(a=='del'){d[g].splice(i,1);if(!d[g].length||done(g,d[g][d[g].length-1]))d[g].push(blank(g));$('#rows').innerHTML=rowsH(g);upd();return}
 if(a=='sigdel'){d.sig='';touch(d);$('#sigbox').innerHTML=sigH();return}
 if(a=='adv'){$('#pa').value=(tot(d)*.7).toFixed(2);return}
-if(a=='dp'){if(confirm('Remove this payment?')){d.pay.splice(i,1);lg(d,'Payment removed');fix(d);touch(d);bill(d)}return}
+if(a=='dp'){if(isBiller())return;if(confirm('Remove this payment?')){d.pay.splice(i,1);lg(d,'Payment removed');fix(d);touch(d);bill(d)}return}
 if(a=='pay'){const v=+$('#pa').value;if(!(v>0)||!isFinite(v)||v>=1e10){alert('Enter a payment amount.');return}if(v>bal(d)+.005&&!confirm('That is more than the balance of ₹ '+n2(bal(d))+'. Record it anyway?'))return;d.pay.push({d:dOk($('#pd').value)?$('#pd').value:today(),a:v,m:$('#pm').value});lg(d,'Payment ₹'+n2(v)+' received ('+$('#pm').value+')');(async()=>{touch(d);fix(d);touch(d);bill(d);if(S.set.auto&&mailOk())mail(d,1)})()}}}
 let tab='all',q='',qb='',qd='',qm='';
 const PM=['Cash','UPI','Bank','Cheque'],paidOk=d=>isBill(d)&&bal(d)<=0.005;
@@ -438,7 +455,7 @@ async function calDone(id){const x=S.set.cal.find(y=>y.id==id);if(!x)return fals
 if(d&&x.a>0&&bal(d)>.005){const v=r2(Math.min(x.a,bal(d)));if(confirm('Also add ₹ '+n2(v)+' as a payment on '+no(d)+'?\n\nOK = add the payment to the bill\nCancel = only mark as received')){d.pay.push({d:today(),a:v,m:'Cash'});lg(d,'Payment ₹'+n2(v)+' received (Cash, from Calendar)');fix(d);touch(d);rec=true}}
 x.ok=1;x.u=Date.now();sch();return rec}
 let remHide=false;
-function RB(){if(remHide)return'';const L=cdue();if(!L.length)return'';const t=today(),nt=L.filter(x=>x.d===t).length,od=L.length-nt;
+function RB(){if(remHide||isBiller())return'';const L=cdue();if(!L.length)return'';const t=today(),nt=L.filter(x=>x.d===t).length,od=L.length-nt;
 return `<div class="rb"><div class="rbh"><b>${nt?'Collect money today ('+nt+')':'Missed collections ('+od+')'}${nt&&od?' + '+od+' missed':''}</b><button class="ghost sm" data-rh="1">Hide</button></div>${L.slice(0,8).map(x=>{const w=waNum(x.ph);return `<div class="rbr"><div><b>${e(x.n)}</b> · ₹ ${n2(x.a)} <small>${CTL[x.t]}${x.d<t?' · missed '+dm(x.d):''}${x.ph?' · '+e(x.ph):''}</small></div><div class="act">${x.ph?`<a class="btn sm" href="tel:${e(telH(x.ph))}">Call</a>`:''}${w?`<a class="btn ghost sm" target="_blank" rel="noopener noreferrer" href="https://wa.me/${w}">WhatsApp</a>`:''}<button class="ghost sm" data-bok="${e(x.id)}">Received</button></div></div>`}).join('')}${L.length>8?`<small>and ${L.length-8} more in Calendar</small>`:''}</div>`}
 document.addEventListener('click',async ev=>{const b=ev.target.closest&&ev.target.closest('[data-bok]');if(b){b.disabled=true;const rec=await calDone(b.dataset.bok),r=document.querySelector('.rb');if(r)r.outerHTML=RB();if(rec&&['#/h','#/s',''].includes(location.hash))route();return}
 const h=ev.target.closest&&ev.target.closest('[data-rh]');if(h){remHide=true;const r=h.closest('.rb');if(r)r.remove()}});
@@ -457,7 +474,7 @@ if(!window.Notification||Notification.permission!='granted')return;
 const direct=()=>{try{const n=new Notification(t,o);n.onclick=()=>{try{window.focus()}catch{}location.hash='#/c'}}catch{}};
 if(location.protocol.startsWith('http')&&navigator.serviceWorker)navigator.serviceWorker.getRegistration().then(r=>r?r.showNotification(t,o):direct()).catch(direct);else direct()}
 const hmOf=()=>/^\d{2}:\d{2}$/.test(S.set.rt||'')?S.set.rt:'09:00',noteLine=x=>x.n+' - ₹'+n2(x.a)+(x.ph?' ('+x.ph+')':'');
-function remCheck(){if(LN())return;const L=cdue().filter(x=>x.d===today());if(!L.length||!window.Notification||Notification.permission!='granted'||S.set.rn===today())return;const n=new Date(),hm=String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');if(hm<hmOf())return;S.set.rn=today();save();
+function remCheck(){if(LN()||isBiller())return;const L=cdue().filter(x=>x.d===today());if(!L.length||!window.Notification||Notification.permission!='granted'||S.set.rn===today())return;const n=new Date(),hm=String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');if(hm<hmOf())return;S.set.rn=today();save();
 fireNote('Collect money today ('+L.length+')',{body:L.map(noteLine).join('\n'),icon:'icon-192.png',tag:'zx-pay-'+today()});noteCache()}
 /* browser only: hand the list to the service worker so it can notify without the page */
 async function noteCache(){try{if(LN()||!window.caches||!location.protocol.startsWith('http'))return;const c=await caches.open('zx-note');let old='';try{const r=await c.match('due.json');if(r)old=(await r.json()).last||''}catch{}
@@ -465,7 +482,7 @@ await c.put('due.json',new Response(JSON.stringify({rt:hmOf(),last:[old,S.set.rn
 function noteBg(){try{if(LN()||!navigator.serviceWorker||!location.protocol.startsWith('http'))return;navigator.serviceWorker.ready.then(r=>r.periodicSync&&r.periodicSync.register('zx-due',{minInterval:3600e3})).catch(()=>{})}catch{}}
 /* phone app: schedule one alarm per day that has someone to collect from (next 60 days). Run again after every change. */
 let schT=0;function schedNote(){clearTimeout(schT);schT=setTimeout(schedNote0,1200)}
-async function schedNote0(){noteCache();const L=LN();if(!L){if(window.Notification&&Notification.permission=='granted')noteBg();return}
+async function schedNote0(){if(isBiller())return;noteCache();const L=LN();if(!L){if(window.Notification&&Notification.permission=='granted')noteBg();return}
 try{if(await notePerm()!=='granted')return;
 await L.createChannel({id:'pay',name:'Payment reminders',description:'Tells you who is due to pay today',importance:4,visibility:1,vibration:true});
 const pn=await L.getPending();if(pn&&pn.notifications&&pn.notifications.length)await L.cancel({notifications:pn.notifications.map(n=>({id:n.id}))});
@@ -583,18 +600,21 @@ if(D.xe=='prn'){expPv();return}if(D.xe)xExport(D.xe,b)}}
 
 window.zxPrintPage=()=>{if($('#zxl'))return;const h=location.hash;if(h=='#/h'){histPv();return}if(h=='#/x'){expPv();return}const d=h.startsWith('#/d/')&&S.docs.find(x=>x.id==h.slice(4)&&!x.del);if(d){billPv(d);return}toast(h==''||h=='#/'?'Save the bill first, then press Print on it.':'Open a bill, History or Expenses to print.')};
 document.addEventListener('keydown',ev=>{if((ev.ctrlKey||ev.metaKey)&&!ev.altKey&&!ev.shiftKey&&String(ev.key).toLowerCase()=='p'){ev.preventDefault();window.zxPrintPage()}});
-function route(){const h=location.hash;scrollTo(0,0);acHide();
+function whoUi(){const w=$('#who');if(!w)return;w.innerHTML=cloud()?`<small>${e(SES.user.email)}</small><span class="chip">${isBiller()?'Bill maker':'Admin'}</span><button class="ghost sm" data-signout="1">Sign out</button>`:''}
+function roleUi(){document.body.dataset.role=isBiller()?'biller':'admin';whoUi()}
+document.addEventListener('click',ev=>{if(ev.target.closest&&ev.target.closest('[data-signout]'))signOut()});
+function route(){const h=location.hash;if(isBiller()&&!(h==''||h=='#/'||(h.startsWith('#/d/')&&mineDoc(h.slice(4))))){location.hash='#/';return}scrollTo(0,0);acHide();
 if(h=='#/h')hist();else if(h=='#/c')cal();else if(h=='#/x')expn();else if(h=='#/s')sets();else if(h.startsWith('#/d/')&&S.docs.find(x=>x.id==h.slice(4)&&!x.del))bill(S.docs.find(x=>x.id==h.slice(4)&&!x.del));else bill(null)
 const on=['#/s','#/h','#/c','#/x'].includes(h)?h:h.startsWith('#/d/')?'#/h':'#/';document.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('on',a.getAttribute('href')==on))}
 const bl2=$('#blogo');if(bl2&&window.ZX_LOGO)bl2.src=ZX_LOGO;
-addEventListener('hashchange',route);route();setInterval(remCheck,60000);setTimeout(remCheck,1500);
+roleUi();addEventListener('hashchange',route);route();setInterval(remCheck,60000);setTimeout(remCheck,1500);
 function showLogin(){if(FRAMED||$('#zxl'))return;const o=document.createElement('div');o.id='zxl';o.className='zxl';
 o.innerHTML=`<form class="zxc"><img src="${window.ZX_LOGO||''}" alt="Ad ZoneX"><h2>Sign in</h2><label>Email<input type="email" name="email" autocomplete="username" required></label><label>Password<input type="password" name="password" autocomplete="current-password" required></label><p class="zxe" id="zxe"></p><button type="submit">Sign in</button></form>`;document.body.append(o);const sh=$('.shell');if(sh)sh.inert=true;const f1=o.querySelector('input');if(f1)f1.focus();
 if(!sb){$('#zxe').textContent='Could not load the cloud library. Reload the page.';return}
 o.querySelector('form').onsubmit=async ev=>{ev.preventDefault();const f=ev.target,b=f.querySelector('button'),m=$('#zxe');b.disabled=true;m.textContent='';
 try{const r=await sb.auth.signInWithPassword({email:f.email.value.trim(),password:f.password.value});if(r.error)m.textContent=r.error.message}catch(x){m.textContent='No connection. Try again.'}b.disabled=false}}
 const hideLogin=()=>{const o=$('#zxl');if(o)o.remove();const sh=$('.shell');if(sh)sh.inert=false};
-if(sb)sb.auth.onAuthStateChange((ev,ss)=>{const was=SES;SES=ss;if(!ss||!was){SCHEMA=null;LEGACY=false;MEMBER=null}if(ss){hideLogin();if(!was)setTimeout(()=>pull().then(()=>{if(['#/h','#/s','#/c','#/x'].includes(location.hash))route()}),0)}else{setTimeout(showLogin,0)}});else showLogin();
+if(sb)sb.auth.onAuthStateChange((ev,ss)=>{const was=SES;SES=ss;roleUi();if(!ss||!was){SCHEMA=null;LEGACY=false;MEMBER=null}if(ss){hideLogin();if(!was)setTimeout(()=>pull().then(()=>{if(['#/h','#/s','#/c','#/x'].includes(location.hash))route()}),0)}else{setTimeout(showLogin,0)}});else showLogin();
 addEventListener('focus',()=>{remCheck();if(cloud())pull()});addEventListener('online',()=>cloud()&&pull());addEventListener('scroll',acPos,true);addEventListener('resize',acPos);if(window.visualViewport)visualViewport.addEventListener('resize',acPos);
 document.addEventListener('click',ev=>{const a=ev.target.closest('a[href="#/"]');if(a&&['','#/'].includes(location.hash)){ev.preventDefault();route()}});
 if('serviceWorker'in navigator&&location.protocol.startsWith('http')&&!isNat())navigator.serviceWorker.register('sw.js').catch(()=>{});

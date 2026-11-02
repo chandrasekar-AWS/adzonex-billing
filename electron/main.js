@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, session, Tray, nativeImage } = require('electron');
+const { app, BrowserWindow, Menu, shell, session, Tray, nativeImage, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -13,7 +13,7 @@ function create() {
   win = new BrowserWindow({
     width: 1280, height: 860, minWidth: 380, minHeight: 560, show: false, autoHideMenuBar: true,
     backgroundColor: '#000000', title: 'Ad ZoneX Billing', icon: path.join(__dirname, '..', 'icon-512.png'),
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, backgroundThrottling: false, spellcheck: true, devTools: !!process.env.ZX_DEBUG, allowRunningInsecureContent: false }
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, backgroundThrottling: false, spellcheck: true, devTools: !!process.env.ZX_DEBUG, allowRunningInsecureContent: false }
   });
   win.once('ready-to-show', () => { if (!startHidden || !tray) win.show(); });
   win.loadFile(path.join(__dirname, '..', 'index.html'));
@@ -24,6 +24,21 @@ function create() {
   win.webContents.on('will-navigate', (e, url) => { if (url.split('#')[0] !== APP_URL) { e.preventDefault(); if (/^https:\/\//.test(url)) shell.openExternal(url); } });
   win.webContents.on('will-attach-webview', e => e.preventDefault());
 }
+
+// Printing from inside the app: our own print panel picks the printer, and the job is always A4 PORTRAIT
+// (the Windows print window cannot show a preview for an Electron app, and it could turn the page sideways).
+ipcMain.handle('zx:printers', async e => {
+  if (!win || e.sender !== win.webContents) return [];
+  const l = await e.sender.getPrintersAsync();
+  return l.map(p => ({ name: String(p.name), display: String(p.displayName || p.name), isDefault: !!p.isDefault }));
+});
+ipcMain.handle('zx:print', (e, o) => new Promise(resolve => {
+  if (!win || e.sender !== win.webContents) return resolve({ ok: false, why: 'blocked' });
+  o = o || {};
+  const opt = { silent: !o.system, printBackground: true, landscape: false, pageSize: 'A4', margins: { marginType: 'none' }, copies: Math.min(99, Math.max(1, Math.floor(+o.copies) || 1)), color: o.color !== false };
+  if (!o.system && o.deviceName) opt.deviceName = String(o.deviceName).slice(0, 300);
+  try { e.sender.print(opt, (ok, why) => resolve({ ok: !!ok, why: why || '' })); } catch (x) { resolve({ ok: false, why: String(x && x.message || x) }); }
+}));
 
 function menu() {
   const mac = process.platform === 'darwin';

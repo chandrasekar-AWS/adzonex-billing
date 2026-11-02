@@ -29,7 +29,7 @@
 .cph{background:var(--hd);padding:10px 14px}.cph img{height:28px;display:block}.cpa{height:4px;background:var(--ac)}
 .cpt{display:flex;justify-content:space-between;background:var(--th);color:var(--thf);padding:6px 14px;margin:12px 14px 0;font-weight:600}.cpg{display:flex;justify-content:space-between;background:var(--tt);color:var(--ttf);padding:6px 14px;margin:6px 14px 14px;font-weight:700}
 @media(max-width:780px){.pdfx{width:210mm}}
-@media print{@page{size:A4;margin:0}html,body{background:#fff!important}body{margin:0}.side,.zxl,.pvw,.toast,.rb{display:none!important}.pw{display:block}.shell{display:none!important}body:not(.pj)::before{content:"To print, open a bill, History or Expenses and press the Print button.";display:block;padding:20mm;color:#000;font:16px/1.5 sans-serif}.pw .zp{margin:0}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+@media print{@page{size:A4 portrait;margin:0}html,body{background:#fff!important}body{margin:0}.side,.zxl,.pvw,.mdl,.toast,.rb{display:none!important}.pw{display:block}.shell{display:none!important}body:not(.pj)::before{content:"To print, open a bill, History or Expenses and press the Print button.";display:block;padding:20mm;color:#000;font:16px/1.5 sans-serif}.pw .zp{margin:0}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 html[data-framed] body>*{display:none!important}
 html[data-framed] body::before{content:"For your security this app cannot be shown inside another website. Open it directly in its own browser tab.";display:block;padding:24px;color:#fff;font:16px/1.5 sans-serif}
 
@@ -59,3 +59,9 @@ html[data-framed] body::before{content:"For your security this app cannot be sho
 .xtl summary{cursor:pointer;font:700 21px Rajdhani,sans-serif;list-style-position:inside}.xtl[open] summary{margin-bottom:8px}
 .xtr{display:grid;grid-template-columns:minmax(0,1fr) 70px 44px;gap:8px;align-items:center;margin-bottom:8px}.xtr small{color:var(--mut);white-space:nowrap}.xtr input[readonly]{color:var(--mut)}
 .xtr.add{grid-template-columns:minmax(0,1fr) auto;margin-top:12px}.xtr.add span{display:none}
+
+.mdl.pp{z-index:500}.mdc label{display:block;font-size:13px;color:var(--mut)}.mdc .cg{grid-template-columns:1fr 1fr}
+/* signed-in person + roles */
+.who{margin-top:auto;display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:0 10px;font-size:12px;color:var(--mut);word-break:break-all}.who:empty{display:none}
+body[data-role=biller] [data-nav]:not([href="#/"]){display:none!important}
+@media(max-width:780px){.who{flex-direction:row;flex-wrap:wrap;align-items:center;margin-top:0;padding:4px 14px}}
