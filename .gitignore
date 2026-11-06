@@ -1,4 +1,5 @@
-android-signing/
-*.keystore
-*.jks
 node_modules/
+dist/
+mobile/
+*.log
+.DS_Store
