@@ -1,6 +1,11 @@
 package __PACKAGE__;
 
+import android.content.ActivityNotFoundException;
+import android.content.ClipData;
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
+import androidx.core.content.FileProvider;
 import android.graphics.pdf.PdfRenderer;
 import android.os.Bundle;
 import android.os.CancellationSignal;
@@ -31,6 +36,67 @@ import java.io.OutputStream;
 public class ZXPrintPlugin extends Plugin {
 
     private static final int MAX_BYTES = 40 * 1024 * 1024;
+
+    /** Opens the customer's WhatsApp chat with the PDF/image already attached (jid = phone number). Rejects if WhatsApp is missing so the app falls back to the share sheet. */
+    @PluginMethod
+    public void sendWhatsApp(final PluginCall call) {
+        final String b64 = call.getString("data");
+        final String mime = call.getString("mime", "application/octet-stream");
+        final String text = call.getString("text", "");
+        final String digits = call.getString("phone", "").replaceAll("\\D", "");
+        final String name = call.getString("name", "Ad ZoneX").replaceAll("[^\\w .\\-]", "-");
+        if (b64 == null || b64.isEmpty()) {
+            call.reject("No file to send.");
+            return;
+        }
+        final Uri uri;
+        try {
+            byte[] bytes = Base64.decode(b64, Base64.DEFAULT);
+            if (bytes.length < 8 || bytes.length > MAX_BYTES) {
+                call.reject("The file is empty or too large.");
+                return;
+            }
+            File dir = new File(getContext().getCacheDir(), "wa");
+            dir.mkdirs();
+            File[] old = dir.listFiles();
+            if (old != null) for (File f : old) f.delete();
+            File file = new File(dir, name);
+            try (OutputStream out = new FileOutputStream(file)) {
+                out.write(bytes);
+            }
+            uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
+        } catch (Exception e) {
+            call.reject("Could not prepare the file: " + e.getMessage());
+            return;
+        }
+        getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                String[] pkgs = {"com.whatsapp", "com.whatsapp.w4b"};
+                for (String pkg : pkgs) {
+                    try {
+                        Intent i = new Intent(Intent.ACTION_SEND);
+                        i.setType(mime);
+                        i.putExtra(Intent.EXTRA_STREAM, uri);
+                        if (!text.isEmpty()) i.putExtra(Intent.EXTRA_TEXT, text);
+                        if (!digits.isEmpty()) i.putExtra("jid", digits + "@s.whatsapp.net");
+                        i.setClipData(ClipData.newRawUri("", uri));
+                        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        i.setPackage(pkg);
+                        getActivity().startActivity(i);
+                        call.resolve();
+                        return;
+                    } catch (ActivityNotFoundException e) {
+                        // try the next WhatsApp variant
+                    } catch (Exception e) {
+                        call.reject("Could not open WhatsApp: " + e.getMessage());
+                        return;
+                    }
+                }
+                call.reject("WhatsApp is not installed.");
+            }
+        });
+    }
 
     @PluginMethod
     public void printPdf(final PluginCall call) {

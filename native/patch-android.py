@@ -23,11 +23,24 @@ def manifest(s):
     perms = ''.join('\n    <uses-permission android:name="android.permission.%s" />' % x for x in ('POST_NOTIFICATIONS', 'SCHEDULE_EXACT_ALARM', 'RECEIVE_BOOT_COMPLETED', 'VIBRATE') if x not in s)
     if perms:
         s = s.replace('<application', perms.lstrip('\n') + '\n    <application', 1)
+    if 'com.whatsapp' not in s:
+        s = s.replace('<application', '<queries>\n        <package android:name="com.whatsapp" />\n        <package android:name="com.whatsapp.w4b" />\n    </queries>\n    <application', 1)
     if 'windowSoftInputMode' not in s:
         s = s.replace('android:launchMode="singleTask"', 'android:launchMode="singleTask"\n            android:windowSoftInputMode="adjustResize"', 1)
     return s
 mp = os.path.join(root, 'app/src/main/AndroidManifest.xml')
 md.parseString(rw(mp, manifest))
+
+# --- FileProvider: make sure the cache folder can be shared (WhatsApp send)
+def fileprov():
+    fp = os.path.join(root, 'app/src/main/res/xml/file_paths.xml')
+    if os.path.exists(fp):
+        t = open(fp, encoding='utf-8').read()
+        if 'cache-path' not in t:
+            t = t.replace('</paths>', '    <cache-path name="zx_cache" path="." />\n</paths>')
+            md.parseString(t)
+            open(fp, 'w', encoding='utf-8').write(t)
+fileprov()
 
 # --- Notification icon (white bell on transparent, as Android requires for the status bar)
 def bell():
